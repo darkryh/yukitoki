@@ -155,6 +155,28 @@ class DownloadManagerE2ETest {
         assertContentEquals(server.payload, readBytes(dest("fb.bin")))
     }
 
+    @Test
+    fun `segmented uses range probe when head fails on real sockets`() = runE2E { manager ->
+        val id = DownloadId.new()
+        manager.submitInternal(
+            DownloadCommand.Enqueue(DownloadRequest(server.url("/brokenhead"), dest("brokenhead.bin"), segmentation = DownloadSegmentation.Fixed(4)), id)
+        )
+        val result = manager.await(id)
+        assertIs<DownloadResult.Success>(result)
+        assertContentEquals(server.payload, readBytes(dest("brokenhead.bin")))
+    }
+
+    @Test
+    fun `segmented reduces pressure after 429 and completes on real sockets`() = runE2E { manager ->
+        val id = DownloadId.new()
+        manager.submitInternal(
+            DownloadCommand.Enqueue(DownloadRequest(server.url("/ratelimitedsegment"), dest("rl.bin"), segmentation = DownloadSegmentation.Fixed(4)), id)
+        )
+        val result = manager.await(id)
+        assertIs<DownloadResult.Success>(result)
+        assertContentEquals(server.payload, readBytes(dest("rl.bin")))
+    }
+
     // --- pause / resume ----------------------------------------------------------
 
     @Test
@@ -334,6 +356,37 @@ class DownloadManagerE2ETest {
     }
 
     @Test
+    fun `chunked body without content length downloads exact bytes`() = runE2E { manager ->
+        val id = DownloadId.new()
+        manager.submitInternal(DownloadCommand.Enqueue(DownloadRequest(server.url("/chunked"), dest("chunked.bin")), id))
+        val result = manager.await(id)
+        assertIs<DownloadResult.Success>(result)
+        assertContentEquals(server.payload, readBytes(dest("chunked.bin")))
+    }
+
+    @Test
+    fun `truncated body fails integrity validation`() = runE2E { manager ->
+        val id = DownloadId.new()
+        manager.submitInternal(
+            DownloadCommand.Enqueue(
+                DownloadRequest(
+                    server.url("/truncated"),
+                    dest("truncated.bin"),
+                    retryPolicy = noRetry(),
+                    segmentation = DownloadSegmentation.SingleStream,
+                ),
+                id,
+            )
+        )
+        val result = manager.await(id)
+        assertIs<DownloadResult.Failure>(result)
+        assertTrue(
+            result.failure is DownloadFailure.IntegrityMismatch || result.failure is DownloadFailure.Timeout,
+            "truncated real-socket response must not succeed; got ${result.failure}",
+        )
+    }
+
+    @Test
     fun `expected size mismatch fails with IntegrityMismatch`() = runE2E { manager ->
         val id = DownloadId.new()
         manager.submitInternal(
@@ -362,6 +415,32 @@ class DownloadManagerE2ETest {
         val result = manager.await(id)
         assertIs<DownloadResult.Failure>(result)
         assertIs<DownloadFailure.ServerChanged>(result.failure)
+    }
+
+    @Test
+    fun `resume receiving 416 fails without corrupting final file`() = runE2E { manager ->
+        val path = dest("r416.bin")
+        val partPath = "$path.part".toPath()
+        fs.write(partPath) { write(ByteArray(server.payload.size + 128) { 1 }) }
+
+        val id = DownloadId.new()
+        manager.submitInternal(
+            DownloadCommand.Enqueue(
+                DownloadRequest(
+                    server.url("/range416"),
+                    path,
+                    retryPolicy = noRetry(),
+                    segmentation = DownloadSegmentation.SingleStream,
+                ),
+                id,
+            )
+        )
+
+        val result = manager.await(id)
+        assertIs<DownloadResult.Failure>(result)
+        assertIs<DownloadFailure.HttpStatus>(result.failure)
+        assertEquals(416, result.failure.code)
+        assertTrue(!fs.exists(path), "416 resume failure must not finalize a corrupt file")
     }
 
     // --- concurrency / priority / ordering ---------------------------------------

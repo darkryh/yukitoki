@@ -36,6 +36,11 @@ import java.util.concurrent.atomic.AtomicInteger
  *  - `GET /stall`               emits a few bytes then hangs forever (idle-timeout bait).
  *  - `GET /changedetag`         answers a ranged request `206` but with a *different* ETag
  *                                than HEAD advertised (trips the ServerChanged guard).
+ *  - `HEAD /brokenhead`          returns a server error while ranged GET works.
+ *  - `GET /ratelimitedsegment`   returns 429 once for a segment, then permits reduced pressure.
+ *  - `GET /truncated`            declares a larger body than it sends.
+ *  - `GET /chunked`              streams without a fixed Content-Length.
+ *  - `GET /range416`             returns 416 to resume requests.
  */
 class E2EDownloadServer(payloadSize: Int = 512 * 1024) {
     /** Deterministic payload so any byte slice can be content-verified. */
@@ -44,6 +49,7 @@ class E2EDownloadServer(payloadSize: Int = 512 * 1024) {
     val lastModified: String = "Wed, 21 Oct 2026 07:28:00 GMT"
 
     private val flakyHits = ConcurrentHashMap<String, AtomicInteger>()
+    private val rateLimitedSegmentHits = AtomicInteger(0)
     private var server: io.ktor.server.engine.EmbeddedServer<*, *>? = null
 
     var port: Int = 0
@@ -112,6 +118,42 @@ class E2EDownloadServer(payloadSize: Int = 512 * 1024) {
                     call.respondBytes(payload.copyOfRange(start, end + 1), status = HttpStatusCode.PartialContent)
                 }
             }
+
+            head("/brokenhead") {
+                call.respond(HttpStatusCode.InternalServerError, "HEAD broken")
+            }
+            get("/brokenhead") { call.serveBody(supportRange = true) }
+
+            head("/ratelimitedsegment") { call.serveHead(supportRange = true) }
+            get("/ratelimitedsegment") {
+                val range = call.request.headers[HttpHeaders.Range]
+                if (range != null && rateLimitedSegmentHits.compareAndSet(0, 1)) {
+                    call.response.headers.append(HttpHeaders.RetryAfter, "0")
+                    call.respond(HttpStatusCode.TooManyRequests, "slow down")
+                } else {
+                    call.serveBody(supportRange = true)
+                }
+            }
+
+            get("/truncated") {
+                call.respond(TruncatedContent(payload.copyOfRange(0, payload.size / 2), payload.size.toLong()))
+            }
+
+            get("/chunked") {
+                call.respondBytesWriter(status = HttpStatusCode.OK) {
+                    writeFully(payload)
+                    flush()
+                }
+            }
+
+            get("/range416") {
+                if (call.request.headers[HttpHeaders.Range] != null) {
+                    call.response.headers.append(HttpHeaders.ContentRange, "bytes */${payload.size}")
+                    call.respond(HttpStatusCode.RequestedRangeNotSatisfiable, "")
+                } else {
+                    call.serveBody(supportRange = true)
+                }
+            }
         }
     }
 
@@ -178,6 +220,18 @@ class E2EDownloadServer(payloadSize: Int = 512 * 1024) {
                 offset = end
                 delay(25)
             }
+        }
+    }
+
+    private class TruncatedContent(
+        private val data: ByteArray,
+        override val contentLength: Long,
+    ) : OutgoingContent.WriteChannelContent() {
+        override val status: HttpStatusCode = HttpStatusCode.OK
+
+        override suspend fun writeTo(channel: io.ktor.utils.io.ByteWriteChannel) {
+            channel.writeFully(data)
+            channel.flush()
         }
     }
 
