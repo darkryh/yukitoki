@@ -5,20 +5,26 @@ import com.ead.yukitoki.manager.DownloadCommand
 import com.ead.yukitoki.manager.DownloadId
 import com.ead.yukitoki.manager.DownloadManager
 import com.ead.yukitoki.manager.DownloadManagerConfig
-import com.ead.yukitoki.manager.DownloadManagerState
 import com.ead.yukitoki.manager.DownloadPriority
 import com.ead.yukitoki.manager.DownloadRequest
+import com.ead.yukitoki.sample.ui.DownloadUiIntent
+import com.ead.yukitoki.sample.ui.DownloadUiState
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import okio.Path.Companion.toPath
 
 /**
- * A plain, platform-agnostic presentation model wrapping a [DownloadManager]. It is created
- * once per screen (see `App`) and disposed with [close]. Kept free of any androidx/lifecycle
- * dependency so the exact same class compiles and runs on Android, iOS and desktop.
+ * A plain, platform-agnostic presentation model wrapping a [DownloadManager].
+ * It processes [DownloadUiIntent] and exposes a single [DownloadUiState] StateFlow.
+ * Kept free of any androidx/lifecycle dependency so the exact same class compiles
+ * and runs on Android, iOS and desktop.
  */
 class DownloadViewModel(private val environment: DownloadEnvironment) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
@@ -30,10 +36,60 @@ class DownloadViewModel(private val environment: DownloadEnvironment) {
         config = DownloadManagerConfig(maxConcurrentDownloads = 2),
     )
 
-    /** The whole queue, observed by the UI via `collectAsState`. */
-    val state: StateFlow<DownloadManagerState> = manager.observeState()
+    // Keep track of the local UI state like the URL input field
+    private val _urlInput = MutableStateFlow("https://fsn1-speed.hetzner.com/10GB.bin")
 
-    fun enqueue(url: String, priority: DownloadPriority = DownloadPriority.NORMAL) {
+    // Unify manager state and local UI state into a single DownloadUiState
+    val state: StateFlow<DownloadUiState> = combine(
+        _urlInput,
+        manager.observeState()
+    ) { url, managerState ->
+        DownloadUiState(
+            url = url,
+            maxConcurrentDownloads = managerState.maxConcurrentDownloads,
+            snapshots = managerState.snapshots.values.toList()
+        )
+    }.stateIn(
+        scope = scope,
+        started = SharingStarted.WhileSubscribed(5000),
+        initialValue = DownloadUiState()
+    )
+
+    /**
+     * Process an intent/action initiated from the view.
+     */
+    fun onIntent(intent: DownloadUiIntent) {
+        when (intent) {
+            is DownloadUiIntent.UpdateUrl -> {
+                _urlInput.value = intent.url
+            }
+            is DownloadUiIntent.AddDownload -> {
+                enqueue(_urlInput.value, intent.priority)
+            }
+            is DownloadUiIntent.PauseDownload -> {
+                dispatch(DownloadCommand.Pause(intent.id))
+            }
+            is DownloadUiIntent.ResumeDownload -> {
+                dispatch(DownloadCommand.Resume(intent.id))
+            }
+            is DownloadUiIntent.CancelDownload -> {
+                dispatch(DownloadCommand.Cancel(intent.id))
+            }
+            is DownloadUiIntent.RetryDownload -> {
+                dispatch(DownloadCommand.Retry(intent.id))
+            }
+            is DownloadUiIntent.DecreaseConcurrency -> {
+                val currentConcurrency = state.value.maxConcurrentDownloads
+                dispatch(DownloadCommand.SetConcurrency((currentConcurrency - 1).coerceAtLeast(1)))
+            }
+            is DownloadUiIntent.IncreaseConcurrency -> {
+                val currentConcurrency = state.value.maxConcurrentDownloads
+                dispatch(DownloadCommand.SetConcurrency(currentConcurrency + 1))
+            }
+        }
+    }
+
+    private fun enqueue(url: String, priority: DownloadPriority = DownloadPriority.NORMAL) {
         val trimmed = url.trim()
         if (trimmed.isEmpty()) return
         val destination = "${environment.downloadsDir}/${fileNameFor(trimmed)}".toPath()
@@ -45,12 +101,6 @@ class DownloadViewModel(private val environment: DownloadEnvironment) {
             )
         }
     }
-
-    fun pause(id: DownloadId) = dispatch(DownloadCommand.Pause(id))
-    fun resume(id: DownloadId) = dispatch(DownloadCommand.Resume(id))
-    fun cancel(id: DownloadId) = dispatch(DownloadCommand.Cancel(id))
-    fun retry(id: DownloadId) = dispatch(DownloadCommand.Retry(id))
-    fun setConcurrency(value: Int) = dispatch(DownloadCommand.SetConcurrency(value.coerceAtLeast(1)))
 
     private fun dispatch(command: DownloadCommand) {
         scope.launch { manager.command(command) }
