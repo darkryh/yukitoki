@@ -3,6 +3,8 @@
 rootProject.name = "yukitoki"
 
 pluginManagement {
+    includeBuild("build-logic")
+
     repositories {
         google {
             mavenContent {
@@ -35,3 +37,4 @@ dependencyResolutionManagement {
 
 include(":download-manager")
 include(":sample:composeApp")
+include(":sample:androidApp")

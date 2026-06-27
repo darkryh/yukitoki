@@ -2,7 +2,7 @@ import org.jetbrains.compose.desktop.application.dsl.TargetFormat
 
 plugins {
     alias(libs.plugins.kotlin.multiplatform)
-    alias(libs.plugins.android.application)
+    alias(libs.plugins.android.kotlin.multiplatform.library)
     alias(libs.plugins.compose)
     alias(libs.plugins.compose.compiler)
 }
@@ -10,7 +10,12 @@ plugins {
 kotlin {
     jvmToolchain(17)
 
-    androidTarget()
+    android {
+        namespace = "com.ead.yukitoki.sample.shared"
+        compileSdk = libs.versions.android.compileSdk.get().toInt()
+        minSdk = libs.versions.android.minSdk.get().toInt()
+    }
+
     jvm("desktop")
 
     listOf(iosArm64(), iosSimulatorArm64()).forEach { iosTarget ->
@@ -22,30 +27,29 @@ kotlin {
 
     sourceSets {
         // applyDefaultHierarchyTemplate is disabled project-wide, so wire iosMain manually.
-        val iosMain by creating { dependsOn(commonMain.get()) }
+        val iosMain = create("iosMain") { dependsOn(named("commonMain").get()) }
         iosArm64Main.get().dependsOn(iosMain)
         iosSimulatorArm64Main.get().dependsOn(iosMain)
         iosMain.dependencies {
             implementation(libs.ktor.client.darwin)
         }
 
-        val desktopMain by getting
+        val desktopMain = getByName("desktopMain")
 
         commonMain.dependencies {
             implementation(project(":download-manager"))
-            implementation(compose.runtime)
-            implementation(compose.foundation)
-            implementation(compose.material)
-            implementation(compose.materialIconsExtended)
-            implementation(compose.material3)
-            implementation(compose.ui)
+            implementation(libs.compose.runtime)
+            implementation(libs.compose.foundation)
+            implementation(libs.compose.material)
+            implementation(libs.compose.material.icons.extended)
+            implementation(libs.compose.material3)
+            implementation(libs.compose.ui)
             implementation(libs.kotlinx.coroutines.core)
             implementation(libs.ktor.client.core)
             implementation(libs.okio)
         }
 
         androidMain.dependencies {
-            implementation(libs.androidx.activity.compose)
             implementation(libs.ktor.client.okhttp)
         }
 
@@ -54,24 +58,6 @@ kotlin {
             implementation(libs.ktor.client.okhttp)
             implementation(libs.kotlinx.coroutines.swing)
         }
-    }
-}
-
-android {
-    namespace = "com.ead.yukitoki.sample"
-    compileSdk = libs.versions.android.compileSdk.get().toInt()
-
-    defaultConfig {
-        applicationId = "com.ead.yukitoki.sample"
-        minSdk = libs.versions.android.minSdk.get().toInt()
-        targetSdk = libs.versions.android.compileSdk.get().toInt()
-        versionCode = 1
-        versionName = "1.0.0"
-    }
-
-    compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_17
-        targetCompatibility = JavaVersion.VERSION_17
     }
 }
 
