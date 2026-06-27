@@ -81,17 +81,21 @@ class DownloadManagerJvmConcurrencyTest {
                     httpClient = client,
                     scope = scope,
                     fileSystem = fs,
-                    config = DownloadManagerConfig(maxConcurrentDownloads = 4),
+                    config = DownloadManagerConfig(concurrency = DownloadConcurrency.Fixed(4)),
                 )
                 val ids = (1..24).map { i ->
                     val id = DownloadId.new()
-                    manager.command(
+                    manager.submitInternal(
                         DownloadCommand.Enqueue(
                             id = id,
                             request = DownloadRequest(
                                 url = "https://example.com/r$round-$i.bin",
                                 destinationPath = path("r$round-$i.bin"),
-                                maxSegments = if (i % 2 == 0) 4 else 1,
+                                segmentation = if (i % 2 == 0) {
+                                    DownloadSegmentation.Fixed(4)
+                                } else {
+                                    DownloadSegmentation.SingleStream
+                                },
                             ),
                         )
                     )
@@ -99,10 +103,14 @@ class DownloadManagerJvmConcurrencyTest {
                 }
                 // Hammer SetConcurrency from another thread while workers run, to stress
                 // the coordinator/worker boundary.
-                scope.launch { repeat(20) { manager.command(DownloadCommand.SetConcurrency((it % 4) + 1)) } }
+                scope.launch {
+                    repeat(20) {
+                        manager.submitInternal(DownloadCommand.SetConcurrency(DownloadConcurrency.Fixed((it % 4) + 1)))
+                    }
+                }
 
                 withTimeout(60_000) {
-                    ids.forEach { id -> assertIs<DownloadResult.Success>(manager.awaitTerminal(id)) }
+                    ids.forEach { id -> assertIs<DownloadResult.Success>(manager.await(id)) }
                 }
                 ids.forEachIndexed { index, _ ->
                     val bytes = fs.read(path("r$round-${index + 1}.bin")) { readByteArray() }
@@ -139,7 +147,7 @@ class DownloadManagerJvmConcurrencyTest {
                 config = DownloadManagerConfig(idleTimeoutMs = 300),
             )
             val id = DownloadId.new()
-            manager.command(
+            manager.submitInternal(
                 DownloadCommand.Enqueue(
                     id = id,
                     request = DownloadRequest(
@@ -155,7 +163,7 @@ class DownloadManagerJvmConcurrencyTest {
                     ),
                 )
             )
-            val result = withTimeout(10_000) { manager.awaitTerminal(id) }
+            val result = withTimeout(10_000) { manager.await(id) }
             assertIs<DownloadResult.Failure>(result)
             assertIs<DownloadFailure.Timeout>(result.failure)
             manager.shutdown()

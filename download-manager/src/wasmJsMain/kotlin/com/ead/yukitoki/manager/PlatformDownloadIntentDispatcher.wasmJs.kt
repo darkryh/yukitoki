@@ -40,7 +40,7 @@ internal actual object PlatformDownloadIntentDispatcher {
         if (request.method != HttpMethod.Get) {
             return "Browser download intents support GET only."
         }
-        if (request.maxSegments > 1) {
+        if (request.segmentation is DownloadSegmentation.Fixed && request.segmentation.segments > 1) {
             return "Browser download intents cannot control segmented range downloads."
         }
         if (request.constraints.requireWifi || request.constraints.requireCharging) {

@@ -1,10 +1,9 @@
 package com.ead.yukitoki.sample
 
 import com.ead.yukitoki.manager.DefaultDownloadManager
-import com.ead.yukitoki.manager.DownloadCommand
+import com.ead.yukitoki.manager.DownloadConcurrency
 import com.ead.yukitoki.manager.DownloadId
 import com.ead.yukitoki.manager.DownloadManager
-import com.ead.yukitoki.manager.DownloadManagerConfig
 import com.ead.yukitoki.manager.DownloadPriority
 import com.ead.yukitoki.manager.DownloadRequest
 import com.ead.yukitoki.sample.ui.DownloadUiIntent
@@ -33,7 +32,6 @@ class DownloadViewModel(private val environment: DownloadEnvironment) {
         httpClient = environment.httpClient,
         scope = scope,
         fileSystem = environment.fileSystem,
-        config = DownloadManagerConfig(maxConcurrentDownloads = 2),
     )
 
     // Keep track of the local UI state like the URL input field
@@ -42,7 +40,7 @@ class DownloadViewModel(private val environment: DownloadEnvironment) {
     // Unify manager state and local UI state into a single DownloadUiState
     val state: StateFlow<DownloadUiState> = combine(
         _urlInput,
-        manager.observeState()
+        manager.state
     ) { url, managerState ->
         DownloadUiState(
             url = url,
@@ -67,24 +65,24 @@ class DownloadViewModel(private val environment: DownloadEnvironment) {
                 enqueue(_urlInput.value, intent.priority)
             }
             is DownloadUiIntent.PauseDownload -> {
-                dispatch(DownloadCommand.Pause(intent.id))
+                scope.launch { manager.pause(intent.id) }
             }
             is DownloadUiIntent.ResumeDownload -> {
-                dispatch(DownloadCommand.Resume(intent.id))
+                scope.launch { manager.resume(intent.id) }
             }
             is DownloadUiIntent.CancelDownload -> {
-                dispatch(DownloadCommand.Cancel(intent.id))
+                scope.launch { manager.cancel(intent.id) }
             }
             is DownloadUiIntent.RetryDownload -> {
-                dispatch(DownloadCommand.Retry(intent.id))
+                scope.launch { manager.retry(intent.id) }
             }
             is DownloadUiIntent.DecreaseConcurrency -> {
                 val currentConcurrency = state.value.maxConcurrentDownloads
-                dispatch(DownloadCommand.SetConcurrency((currentConcurrency - 1).coerceAtLeast(1)))
+                scope.launch { manager.setConcurrency(DownloadConcurrency.Fixed((currentConcurrency - 1).coerceAtLeast(1))) }
             }
             is DownloadUiIntent.IncreaseConcurrency -> {
                 val currentConcurrency = state.value.maxConcurrentDownloads
-                dispatch(DownloadCommand.SetConcurrency(currentConcurrency + 1))
+                scope.launch { manager.setConcurrency(DownloadConcurrency.Fixed(currentConcurrency + 1)) }
             }
         }
     }
@@ -94,16 +92,8 @@ class DownloadViewModel(private val environment: DownloadEnvironment) {
         if (trimmed.isEmpty()) return
         val destination = "${environment.downloadsDir}/${fileNameFor(trimmed)}".toPath()
         scope.launch {
-            manager.command(
-                DownloadCommand.Enqueue(
-                    DownloadRequest(url = trimmed, destinationPath = destination, priority = priority),
-                )
-            )
+            manager.enqueue(DownloadRequest(url = trimmed, destinationPath = destination, priority = priority))
         }
-    }
-
-    private fun dispatch(command: DownloadCommand) {
-        scope.launch { manager.command(command) }
     }
 
     /** Non-suspending teardown for a UI lifecycle callback (e.g. `onDispose`). */

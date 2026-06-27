@@ -38,32 +38,32 @@ val manager = DefaultDownloadManager(
     scope = appScope,          // you own the lifecycle; the manager runs under a child SupervisorJob
 )
 
-val id = DownloadId.new()
-manager.command(
-    DownloadCommand.Enqueue(
-        id = id,
-        request = DownloadRequest(
-            url = "https://example.com/file.docx",
-            destinationPath = "/downloads/file.docx".toPath(),
-        )
-    )
+val id = manager.enqueue(
+    url = "https://example.com/file.docx",
+    destinationPath = "/downloads/file.docx".toPath(),
 )
 
-val result: DownloadResult? = manager.awaitTerminal(id)
+val result: DownloadResult? = manager.await(id)
 
 // or, for a single one-shot download:
-val r: DownloadResult = manager.downloadNow(DownloadRequest(url = "https://example.com/a.bin"))
+val r: DownloadResult = manager.download("https://example.com/a.bin")
 ```
+
+By default the manager chooses bounded queue concurrency and per-file segmentation automatically. Small files use a single stream; larger files use segmented HTTP range workers only when the server proves that ranges are safe.
 
 ## ViewModel + Compose
 
 ```kotlin
 class DownloadsViewModel(private val manager: DownloadManager) : ViewModel() {
-    val state = manager.observeState()
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), manager.observeState().value)
+    val state = manager.state
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), manager.state.value)
 
     fun enqueue(url: String) = viewModelScope.launch {
-        manager.command(DownloadCommand.Enqueue(DownloadRequest(url)))
+        manager.enqueue(url)
+    }
+
+    fun pause(id: DownloadId) = viewModelScope.launch {
+        manager.pause(id)
     }
 
     // Non-suspending teardown for a lifecycle callback that isn't a coroutine.
@@ -84,7 +84,7 @@ fun DownloadsScreen(vm: DownloadsViewModel) {
 Per-item observation (cheaper recomposition for a detail screen):
 
 ```kotlin
-val item: DownloadSnapshot? by manager.observeItem(id).collectAsStateWithLifecycle(null)
+val item: DownloadSnapshot? by manager.observe(id).collectAsStateWithLifecycle(null)
 ```
 
 ## Threading model
@@ -97,10 +97,10 @@ DefaultDownloadManager(httpClient, scope, ioDispatcher = myIoDispatcher)
 
 ## Lifecycle
 
-- `shutdown(cancelActive = false)` — graceful: stops accepting work and **waits for in-flight downloads to finish** (their files are finalized) before returning. Outstanding `awaitTerminal` callers are released.
+- `shutdown(cancelActive = false)` — graceful: stops accepting work and **waits for in-flight downloads to finish** (their files are finalized) before returning. Outstanding `await` callers are released.
 - `shutdown(cancelActive = true)` — cancels active downloads, then returns.
 - `cancel()` — non-suspending, immediate teardown for `ViewModel.onCleared()` and similar; cancels everything at once.
-- After shutdown/cancel, `command()` returns `CommandAck.Rejected` and `awaitTerminal()` returns `null` instead of hanging.
+- After shutdown/cancel, control methods return `CommandAck.Rejected` and `await()` returns `null` instead of hanging.
 
 ## Android setup
 
@@ -116,19 +116,29 @@ If you always pass an explicit `DownloadRequest.destinationPath`, this is not re
 
 `DownloadManagerConfig` (constructor) controls global behavior:
 
-- `maxConcurrentDownloads` (default 2) — also changeable at runtime via `DownloadCommand.SetConcurrency`.
+- `concurrency` (default `DownloadConcurrency.Auto`) — use `DownloadConcurrency.Fixed(n)` only when the app has a specific queue limit.
 - `bufferSizeBytes` (default 64 KiB).
 - `deletePartialOnFailure` / `deletePartialOnCancel` (default true).
 - `idleTimeoutMs` (default 30 000) — per-attempt stall guard: if no bytes arrive for this long the attempt fails with `DownloadFailure.Timeout` (and may retry). Set `0` to disable. This is independent of, and complementary to, your `HttpClient` connect/request timeouts.
 
-Per-request options live on `DownloadRequest`: `overwritePolicy`, `retryPolicy`, `expectedSizeBytes`, `expectedChecksum`, `maxSegments`, `priority`, `progressGranularity`, custom `headers`, `fileName`.
+Per-request options live on `DownloadRequest`: `overwritePolicy`, `retryPolicy`, `expectedSizeBytes`, `expectedChecksum`, `segmentation`, `priority`, `progressGranularity`, custom `headers`, `fileName`.
+
+```kotlin
+val request = DownloadRequest(
+    url = "https://example.com/video.mp4",
+    destinationPath = "/downloads/video.mp4".toPath(),
+    segmentation = DownloadSegmentation.Fixed(4), // optional advanced override
+)
+```
 
 ## Production contract
 
 - `DefaultDownloadManager` is the filesystem-backed manager for JVM, Android, and iOS. It streams through Ktor into a `.part` file and atomically moves the completed file into place.
-- Download parallelism has two levels: `DownloadManagerConfig.maxConcurrentDownloads` bounds active downloads, and `DownloadRequest.maxSegments` enables per-file byte-range workers when the server supports `Accept-Ranges: bytes` and exposes a positive `Content-Length`.
-- Segmented downloads are GET-only. The manager probes metadata with `HEAD`, requests isolated `Range` slices with `Accept-Encoding: identity`, validates each `206 Partial Content` response, then merges segment temp files into the normal `.part` file before checksum and atomic finalization.
-- If segmented preflight cannot prove range support, the manager falls back to the validated single-stream path. If a segment response is inconsistent, the download fails and temp files are cleaned according to the failure cleanup policy.
+- Download parallelism has two levels: `DownloadManagerConfig.concurrency` bounds active downloads, and `DownloadRequest.segmentation` controls per-file byte-range workers.
+- Automatic segmentation is GET-only. The manager probes metadata with `HEAD`, falls back to a tiny `GET Range: bytes=0-0` probe when `HEAD` is broken or inconclusive, then requests isolated `Range` slices with `Accept-Encoding: identity`.
+- Segmented responses are validated (`206 Partial Content`, `Content-Range`, expected byte counts), then merged into the normal `.part` file before checksum and atomic finalization.
+- If automatic segmented preflight cannot prove range support, the manager falls back to the validated single-stream path. Explicit `DownloadSegmentation.Fixed(n)` is treated as a maximum segment count, not an instruction to ignore server pressure.
+- `429 Too Many Requests` is treated as a pacing signal: the manager honors numeric `Retry-After`, reduces per-origin request pressure, retries segmented downloads with fewer segments, and can fall back to single-stream when a host is rate-limiting.
 - Single-stream pause preserves the `.part` file for resume. Segmented temp slices are implementation details and are cleaned on failure/cancel; callers should treat pause/resume as best for the single-stream resume path.
 - Cancel and failure cleanup follow `DownloadManagerConfig.deletePartialOnCancel` and `deletePartialOnFailure`.
 - Retries are attempted only for network failures, timeouts (including the idle/stall timeout), HTTP 5xx, 408, and 429, and use the configured exponential backoff and jitter.

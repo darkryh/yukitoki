@@ -48,6 +48,23 @@ class DefaultDownloadManager(
         val lastModified: String?,
     )
 
+    private data class OriginProfile(
+        var activeRequests: Int = 0,
+        var maxParallelRequests: Int = 4,
+        var penaltyUntilMs: Long = 0L,
+        var recentRateLimits: Int = 0,
+        var lastGoodSegmentCount: Int? = null,
+    )
+
+    private inner class OriginPermit(private val origin: String) {
+        suspend fun release() {
+            originMutex.withLock {
+                val profile = originProfiles[origin] ?: return
+                profile.activeRequests = (profile.activeRequests - 1).coerceAtLeast(0)
+            }
+        }
+    }
+
     private sealed interface InternalEvent {
         data class Started(val id: DownloadId, val request: DownloadRequest) : InternalEvent
         data class Progress(val id: DownloadId, val progress: DownloadProgress) : InternalEvent
@@ -77,6 +94,7 @@ class DefaultDownloadManager(
     private var closed = false
 
     private var runtimeConfig = config
+    private var maxConcurrentDownloads = resolveConcurrentDownloads(config.concurrency)
     private val pendingHigh = ArrayDeque<DownloadId>()
     private val pendingNormal = ArrayDeque<DownloadId>()
     private val pendingLow = ArrayDeque<DownloadId>()
@@ -84,6 +102,8 @@ class DefaultDownloadManager(
     private val snapshots = linkedMapOf<DownloadId, DownloadSnapshot>()
     private val terminalWaiters = mutableMapOf<DownloadId, MutableList<CompletableDeferred<DownloadResult?>>>()
     private val resumeAfterPause = mutableSetOf<DownloadId>()
+    private val originMutex = Mutex()
+    private val originProfiles = mutableMapOf<String, OriginProfile>()
 
     // Coordinator-confined: only the coordinator coroutine reads/writes this map.
     private val serverMetadata = mutableMapOf<DownloadId, ServerMetadata>()
@@ -97,7 +117,7 @@ class DefaultDownloadManager(
             snapshots = emptyMap(),
             pending = emptyList(),
             active = emptySet(),
-            maxConcurrentDownloads = runtimeConfig.maxConcurrentDownloads,
+            maxConcurrentDownloads = maxConcurrentDownloads,
         )
     )
 
@@ -105,7 +125,7 @@ class DefaultDownloadManager(
         internalScope.launch { coordinatorLoop() }
     }
 
-    override suspend fun command(command: DownloadCommand): CommandAck {
+    private suspend fun submitCommand(command: DownloadCommand): CommandAck {
         if (closed) return CommandAck.Rejected("Download manager is shut down")
         val reply = CompletableDeferred<CommandAck>()
         if (!inbox.trySend(InternalMessage.UserCommand(command, reply)).isSuccess) {
@@ -114,28 +134,67 @@ class DefaultDownloadManager(
         return reply.await()
     }
 
-    override fun observeState(): StateFlow<DownloadManagerState> = _state.asStateFlow()
+    internal suspend fun submitInternal(command: DownloadCommand): CommandAck = submitCommand(command)
 
-    override fun observeItem(downloadId: DownloadId): Flow<DownloadSnapshot?> =
+    override val state: StateFlow<DownloadManagerState> = _state.asStateFlow()
+
+    override fun observe(downloadId: DownloadId): Flow<DownloadSnapshot?> =
         _state.map { it.snapshots[downloadId] }.distinctUntilChanged()
 
-    override suspend fun awaitTerminal(downloadId: DownloadId): DownloadResult? {
+    override suspend fun await(downloadId: DownloadId): DownloadResult? {
         if (closed) return null
         val reply = CompletableDeferred<DownloadResult?>()
         if (!inbox.trySend(InternalMessage.AwaitTerminal(downloadId, reply)).isSuccess) return null
         return reply.await()
     }
 
-    override suspend fun downloadNow(request: DownloadRequest): DownloadResult {
+    override suspend fun enqueue(request: DownloadRequest, id: DownloadId): DownloadId {
+        return when (val ack = submitCommand(DownloadCommand.Enqueue(request, id))) {
+            is CommandAck.Accepted -> ack.id ?: id
+            is CommandAck.Rejected -> throw IllegalStateException(ack.reason)
+        }
+    }
+
+    override suspend fun download(request: DownloadRequest): DownloadResult {
         val id = DownloadId.new()
-        val ack = command(DownloadCommand.Enqueue(request, id))
+        val ack = submitCommand(DownloadCommand.Enqueue(request, id))
         if (ack !is CommandAck.Accepted) {
             val reason = (ack as? CommandAck.Rejected)?.reason ?: "Download was rejected"
             return DownloadResult.Failure(DownloadFailure.Unknown(reason))
         }
-        return awaitTerminal(id)
+        return await(id)
             ?: DownloadResult.Failure(DownloadFailure.Unknown("Download did not reach a terminal state"))
     }
+
+    override suspend fun pause(downloadId: DownloadId): CommandAck =
+        submitCommand(DownloadCommand.Pause(downloadId))
+
+    override suspend fun resume(downloadId: DownloadId): CommandAck =
+        submitCommand(DownloadCommand.Resume(downloadId))
+
+    override suspend fun cancel(downloadId: DownloadId): CommandAck =
+        submitCommand(DownloadCommand.Cancel(downloadId))
+
+    override suspend fun retry(downloadId: DownloadId): CommandAck =
+        submitCommand(DownloadCommand.Retry(downloadId))
+
+    override suspend fun move(downloadId: DownloadId, newPosition: Int): CommandAck =
+        submitCommand(DownloadCommand.Move(downloadId, newPosition))
+
+    override suspend fun pauseAll(): CommandAck =
+        submitCommand(DownloadCommand.PauseAll)
+
+    override suspend fun resumeAll(): CommandAck =
+        submitCommand(DownloadCommand.ResumeAll)
+
+    override suspend fun cancelAll(): CommandAck =
+        submitCommand(DownloadCommand.CancelAll)
+
+    override suspend fun retryAllFailed(): CommandAck =
+        submitCommand(DownloadCommand.RetryAllFailed)
+
+    override suspend fun setConcurrency(concurrency: DownloadConcurrency): CommandAck =
+        submitCommand(DownloadCommand.SetConcurrency(concurrency))
 
     override suspend fun shutdown(cancelActive: Boolean) {
         closed = true
@@ -272,12 +331,9 @@ class DefaultDownloadManager(
             }
             is DownloadCommand.Move -> moveDownload(cmd.id, cmd.newPosition)
             is DownloadCommand.SetConcurrency -> {
-                if (cmd.maxConcurrentDownloads < 1) {
-                    CommandAck.Rejected("Concurrency must be >= 1")
-                } else {
-                    runtimeConfig = runtimeConfig.copy(maxConcurrentDownloads = cmd.maxConcurrentDownloads)
-                    CommandAck.Accepted()
-                }
+                runtimeConfig = runtimeConfig.copy(concurrency = cmd.concurrency)
+                maxConcurrentDownloads = resolveConcurrentDownloads(cmd.concurrency)
+                CommandAck.Accepted()
             }
         }
         message.reply.complete(ack)
@@ -394,7 +450,7 @@ class DefaultDownloadManager(
                     shouldRetry(event.failure, snap.request.retryPolicy)
                 if (canRetry) {
                     snapshots[event.id] = snap.copy(state = DownloadState.Queued)
-                    scheduleRetry(event.id, snap.attempts, snap.request.retryPolicy)
+                    scheduleRetry(event.id, snap.attempts, snap.request.retryPolicy, event.failure)
                 } else {
                     serverMetadata.remove(event.id)
                     snapshots[event.id] = snap.copy(state = DownloadState.Failed(event.failure), queuePosition = null)
@@ -430,8 +486,9 @@ class DefaultDownloadManager(
         }
     }
 
-    private fun scheduleRetry(id: DownloadId, failedAttempt: Int, policy: RetryPolicy) {
-        val delayMs = computeBackoffDelayMs(failedAttempt, policy)
+    private fun scheduleRetry(id: DownloadId, failedAttempt: Int, policy: RetryPolicy, failure: DownloadFailure) {
+        val delayMs = (failure as? DownloadFailure.HttpStatus)?.retryAfterMillis
+            ?: computeBackoffDelayMs(failedAttempt, policy)
         internalScope.launch {
             delay(delayMs)
             inbox.trySend(InternalMessage.RetryReady(id))
@@ -439,7 +496,7 @@ class DefaultDownloadManager(
     }
 
     private fun dispatchIfPossible() {
-        while (active.size < runtimeConfig.maxConcurrentDownloads) {
+        while (active.size < maxConcurrentDownloads) {
             val next = dequeueNext() ?: break
             val snapshot = snapshots[next] ?: continue
             if (snapshot.state !is DownloadState.Queued) continue
@@ -521,7 +578,9 @@ class DefaultDownloadManager(
     ): Boolean {
         val exists = fileSystem.exists(partialPath)
         val downloadedBytes = if (exists) (fileSystem.metadata(partialPath).size ?: 0L) else 0L
-        if (request.maxSegments > 1 && downloadedBytes == 0L &&
+        if (request.method == HttpMethod.Get &&
+            request.segmentation !is DownloadSegmentation.SingleStream &&
+            downloadedBytes == 0L &&
             writeSegmentedDownloadToPath(id, request, config, partialPath)
         ) {
             return false
@@ -567,7 +626,11 @@ class DefaultDownloadManager(
                     sendEvent(InternalEvent.MetadataLearned(id, ServerMetadata(responseETag, responseLastModified)))
                 }
             } else {
-                throw DownloadHttpException(code = response.status.value, message = response.status.description)
+                throw DownloadHttpException(
+                    code = response.status.value,
+                    message = response.status.description,
+                    retryAfterMillis = response.headers.retryAfterMillis(),
+                )
             }
 
             // 2. Pre-flight Disk Space Validation
@@ -673,80 +736,163 @@ class DefaultDownloadManager(
         partialPath: Path,
     ): Boolean {
         val metadata = fetchSegmentedMetadata(id, request) ?: return false
-        val segmentCount = min(request.maxSegments.toLong(), metadata.totalBytes).toInt().coerceAtLeast(1)
-        if (segmentCount <= 1) return false
+        val origin = originKey(request.url)
+        var desiredSegments = min(resolveSegmentCount(request.segmentation, metadata.totalBytes).toLong(), metadata.totalBytes)
+            .toInt()
+            .coerceAtLeast(1)
 
-        val usableSpace = PlatformSpaceChecker.getUsableSpace(partialPath)
-        if (usableSpace != -1L) {
-            val safetyMargin = 10L * 1024L * 1024L
-            if (usableSpace < metadata.totalBytes + safetyMargin) {
-                throw DiskNoSpaceException(metadata.totalBytes, usableSpace)
-            }
-        }
+        while (desiredSegments > 1) {
+            val segmentCount = recommendedSegmentCount(origin, desiredSegments)
+            if (segmentCount <= 1) return false
 
-        val ranges = buildSegmentRanges(metadata.totalBytes, segmentCount)
-        val segmentPaths = ranges.indices.map { index -> "$partialPath.seg$index".toPath() }
-        segmentPaths.forEach { fileSystem.delete(it, mustExist = false) }
-
-        try {
-            val progressMutex = Mutex()
-            val segmentProgress = LongArray(ranges.size)
-            coroutineScope {
-                ranges.mapIndexed { index, range ->
-                    async {
-                        downloadSegment(
-                            request = request,
-                            config = config,
-                            metadata = metadata,
-                            range = range,
-                            segmentPath = segmentPaths[index],
-                            onSegmentProgress = { bytesInSegment ->
-                                val totalDownloaded = progressMutex.withLock {
-                                    segmentProgress[index] = bytesInSegment
-                                    segmentProgress.sum()
-                                }
-                                sendEvent(
-                                    InternalEvent.Progress(
-                                        id,
-                                        DownloadProgress(
-                                            bytesDownloaded = totalDownloaded,
-                                            totalBytes = metadata.totalBytes,
-                                            speedBytesPerSecond = null,
-                                            etaMillis = null,
-                                        )
-                                    )
-                                )
-                            }
-                        )
-                    }
-                }.awaitAll()
-            }
-
-            fileSystem.delete(partialPath, mustExist = false)
-            fileSystem.sink(partialPath).buffer().use { sink ->
-                segmentPaths.forEach { segmentPath ->
-                    fileSystem.source(segmentPath).use { source ->
-                        sink.writeAll(source)
-                    }
+            val usableSpace = PlatformSpaceChecker.getUsableSpace(partialPath)
+            if (usableSpace != -1L) {
+                val safetyMargin = 10L * 1024L * 1024L
+                if (usableSpace < metadata.totalBytes + safetyMargin) {
+                    throw DiskNoSpaceException(metadata.totalBytes, usableSpace)
                 }
             }
+
+            val ranges = buildSegmentRanges(metadata.totalBytes, segmentCount)
+            val segmentPaths = ranges.indices.map { index -> "$partialPath.seg$index".toPath() }
             segmentPaths.forEach { fileSystem.delete(it, mustExist = false) }
-            val actualSize = fileSystem.metadata(partialPath).size ?: 0L
-            if (actualSize != metadata.totalBytes) {
-                throw DownloadIntegrityException(metadata.totalBytes, actualSize)
-            }
-            return true
-        } catch (t: Throwable) {
-            val shouldDelete = if (t is CancellationException) {
-                config.deletePartialOnCancel
-            } else {
-                config.deletePartialOnFailure
-            }
-            if (shouldDelete) {
-                segmentPaths.forEach { fileSystem.delete(it, mustExist = false) }
+
+            try {
+                val progressMutex = Mutex()
+                val segmentProgress = LongArray(ranges.size)
+                coroutineScope {
+                    ranges.mapIndexed { index, range ->
+                        async {
+                            downloadSegment(
+                                request = request,
+                                config = config,
+                                metadata = metadata,
+                                range = range,
+                                segmentPath = segmentPaths[index],
+                                onSegmentProgress = { bytesInSegment ->
+                                    val totalDownloaded = progressMutex.withLock {
+                                        segmentProgress[index] = bytesInSegment
+                                        segmentProgress.sum()
+                                    }
+                                    sendEvent(
+                                        InternalEvent.Progress(
+                                            id,
+                                            DownloadProgress(
+                                                bytesDownloaded = totalDownloaded,
+                                                totalBytes = metadata.totalBytes,
+                                                speedBytesPerSecond = null,
+                                                etaMillis = null,
+                                            )
+                                        )
+                                    )
+                                }
+                            )
+                        }
+                    }.awaitAll()
+                }
+
                 fileSystem.delete(partialPath, mustExist = false)
+                fileSystem.sink(partialPath).buffer().use { sink ->
+                    segmentPaths.forEach { segmentPath ->
+                        fileSystem.source(segmentPath).use { source ->
+                            sink.writeAll(source)
+                        }
+                    }
+                }
+                segmentPaths.forEach { fileSystem.delete(it, mustExist = false) }
+                val actualSize = fileSystem.metadata(partialPath).size ?: 0L
+                if (actualSize != metadata.totalBytes) {
+                    throw DownloadIntegrityException(metadata.totalBytes, actualSize)
+                }
+                recordOriginSuccess(origin, segmentCount)
+                return true
+            } catch (t: Throwable) {
+                val shouldDelete = if (t is CancellationException) {
+                    config.deletePartialOnCancel
+                } else {
+                    config.deletePartialOnFailure
+                }
+                if (shouldDelete) {
+                    segmentPaths.forEach { fileSystem.delete(it, mustExist = false) }
+                    fileSystem.delete(partialPath, mustExist = false)
+                }
+                val httpFailure = t.findDownloadHttpException()
+                if (httpFailure?.code == 429 && segmentCount > 1) {
+                    val retryDelay = httpFailure.retryAfterMillis ?: computeAdaptiveRateLimitDelayMs(segmentCount)
+                    recordOriginRateLimit(origin, segmentCount, retryDelay)
+                    delay(retryDelay)
+                    desiredSegments = (segmentCount / 2).coerceAtLeast(1)
+                    if (desiredSegments <= 1) return false
+                    continue
+                } else {
+                    throw t
+                }
             }
-            throw t
+        }
+        return false
+    }
+
+    private fun Throwable.findDownloadHttpException(): DownloadHttpException? {
+        var current: Throwable? = this
+        while (current != null) {
+            if (current is DownloadHttpException) return current
+            current = current.cause
+        }
+        return null
+    }
+
+    private fun computeAdaptiveRateLimitDelayMs(segmentCount: Int): Long {
+        val base = 750L * segmentCount
+        val jitter = Random.nextLong(0L, 750L)
+        return (base + jitter).coerceAtMost(15_000L)
+    }
+
+    private suspend fun acquireOriginPermit(origin: String): OriginPermit {
+        while (true) {
+            val waitMs = originMutex.withLock {
+                val now = Clock.System.now().toEpochMilliseconds()
+                val profile = originProfiles.getOrPut(origin) { OriginProfile() }
+                when {
+                    profile.penaltyUntilMs > now -> profile.penaltyUntilMs - now
+                    profile.activeRequests < profile.maxParallelRequests -> {
+                        profile.activeRequests += 1
+                        return OriginPermit(origin)
+                    }
+                    else -> 50L
+                }
+            }
+            delay(waitMs.coerceAtLeast(1L))
+        }
+    }
+
+    private suspend fun recommendedSegmentCount(origin: String, desiredSegments: Int): Int =
+        originMutex.withLock {
+            val now = Clock.System.now().toEpochMilliseconds()
+            val profile = originProfiles.getOrPut(origin) { OriginProfile() }
+            val rememberedCap = profile.lastGoodSegmentCount ?: desiredSegments
+            val pressureCap = if (profile.penaltyUntilMs > now) 1 else profile.maxParallelRequests
+            min(desiredSegments, min(rememberedCap, pressureCap)).coerceAtLeast(1)
+        }
+
+    private suspend fun recordOriginRateLimit(origin: String, segmentCount: Int, retryDelayMs: Long) {
+        originMutex.withLock {
+            val now = Clock.System.now().toEpochMilliseconds()
+            val profile = originProfiles.getOrPut(origin) { OriginProfile() }
+            profile.recentRateLimits += 1
+            profile.maxParallelRequests = (min(profile.maxParallelRequests, segmentCount) / 2).coerceAtLeast(1)
+            profile.lastGoodSegmentCount = min(profile.lastGoodSegmentCount ?: profile.maxParallelRequests, profile.maxParallelRequests)
+            profile.penaltyUntilMs = max(profile.penaltyUntilMs, now + retryDelayMs)
+        }
+    }
+
+    private suspend fun recordOriginSuccess(origin: String, segmentCount: Int) {
+        originMutex.withLock {
+            val profile = originProfiles.getOrPut(origin) { OriginProfile() }
+            profile.recentRateLimits = 0
+            profile.lastGoodSegmentCount = segmentCount
+            if (profile.maxParallelRequests < segmentCount) {
+                profile.maxParallelRequests = segmentCount
+            }
         }
     }
 
@@ -771,26 +917,81 @@ class DefaultDownloadManager(
                 appendIdentityEncodingIfAbsent(request)
             }
         }
-        return statement.execute { response ->
-            when {
-                response.status == HttpStatusCode.MethodNotAllowed || response.status == HttpStatusCode.NotImplemented -> null
-                response.status.value !in 200..299 -> throw DownloadHttpException(response.status.value, response.status.description)
-                response.headers[HttpHeaders.AcceptRanges]
-                    ?.split(',')
-                    ?.any { it.trim().equals("bytes", ignoreCase = true) } != true -> null
-                else -> {
-                    val totalBytes = response.headers[HttpHeaders.ContentLength]?.toLongOrNull()?.takeIf { it > 0L }
-                        ?: return@execute null
-                    val eTag = response.headers[HttpHeaders.ETag]?.trim()
-                    val lastModified = response.headers[HttpHeaders.LastModified]?.trim()
-                    if (eTag != null || lastModified != null) {
-                        sendEvent(InternalEvent.MetadataLearned(id, ServerMetadata(eTag, lastModified)))
+        return try {
+            statement.execute { response ->
+                when {
+                    response.status == HttpStatusCode.MethodNotAllowed || response.status == HttpStatusCode.NotImplemented -> {
+                        fetchRangeProbeMetadata(id, request)
                     }
-                    SegmentedMetadata(totalBytes, eTag, lastModified)
+                    response.status.value !in 200..299 -> {
+                        fetchRangeProbeMetadata(id, request)
+                            ?: if (request.segmentation is DownloadSegmentation.Fixed) {
+                                throw DownloadHttpException(
+                                    code = response.status.value,
+                                    message = response.status.description,
+                                    retryAfterMillis = response.headers.retryAfterMillis(),
+                                )
+                            } else {
+                                null
+                            }
+                    }
+                    response.headers[HttpHeaders.AcceptRanges]
+                        ?.split(',')
+                        ?.any { it.trim().equals("bytes", ignoreCase = true) } != true -> {
+                        fetchRangeProbeMetadata(id, request)
+                    }
+                    else -> {
+                        val totalBytes = response.headers[HttpHeaders.ContentLength]?.toLongOrNull()?.takeIf { it > 0L }
+                            ?: return@execute fetchRangeProbeMetadata(id, request)
+                        val eTag = response.headers[HttpHeaders.ETag]?.trim()
+                        val lastModified = response.headers[HttpHeaders.LastModified]?.trim()
+                        publishSegmentedMetadata(id, eTag, lastModified)
+                        SegmentedMetadata(totalBytes, eTag, lastModified)
+                    }
                 }
             }
+        } catch (t: Throwable) {
+            fetchRangeProbeMetadata(id, request)
+                ?: if (request.segmentation is DownloadSegmentation.Fixed) throw t else null
         }
     }
+
+    private suspend fun fetchRangeProbeMetadata(id: DownloadId, request: DownloadRequest): SegmentedMetadata? {
+        val statement = httpClient.prepareRequest(request.url) {
+            method = HttpMethod.Get
+            headers {
+                appendCallerHeaders(request)
+                appendIdentityEncodingIfAbsent(request)
+                append(HttpHeaders.Range, "bytes=0-0")
+            }
+        }
+        return try {
+            statement.execute { response ->
+                if (response.status != HttpStatusCode.PartialContent) return@execute null
+                val totalBytes = response.headers[HttpHeaders.ContentRange]
+                    ?.let { parseTotalBytesFromContentRange(it) }
+                    ?: response.headers[HttpHeaders.ContentLength]?.toLongOrNull()?.takeIf { it > 1L }
+                    ?: return@execute null
+                val eTag = response.headers[HttpHeaders.ETag]?.trim()
+                val lastModified = response.headers[HttpHeaders.LastModified]?.trim()
+                publishSegmentedMetadata(id, eTag, lastModified)
+                SegmentedMetadata(totalBytes, eTag, lastModified)
+            }
+        } catch (t: Throwable) {
+            null
+        }
+    }
+
+    private fun publishSegmentedMetadata(id: DownloadId, eTag: String?, lastModified: String?) {
+        if (eTag != null || lastModified != null) {
+            sendEvent(InternalEvent.MetadataLearned(id, ServerMetadata(eTag, lastModified)))
+        }
+    }
+
+    private fun parseTotalBytesFromContentRange(contentRange: String): Long? =
+        contentRange.substringAfter('/', missingDelimiterValue = "")
+            .takeIf { it.isNotBlank() && it != "*" }
+            ?.toLongOrNull()
 
     private suspend fun downloadSegment(
         request: DownloadRequest,
@@ -810,35 +1011,44 @@ class DefaultDownloadManager(
                     ?: metadata.lastModified?.let { append(HttpHeaders.IfRange, it) }
             }
         }
-        statement.execute { response ->
-            if (response.status != HttpStatusCode.PartialContent) {
-                throw DownloadHttpException(response.status.value, response.status.description)
-            }
-            val contentLength = response.headers[HttpHeaders.ContentLength]?.toLongOrNull()
-            if (contentLength != null && contentLength != range.length) {
-                throw DownloadIntegrityException(range.length, contentLength)
-            }
-            response.headers[HttpHeaders.ContentRange]?.let { contentRange ->
-                validateContentRange(contentRange, range, metadata.totalBytes)
-            }
+        val permit = acquireOriginPermit(originKey(request.url))
+        try {
+            statement.execute { response ->
+                if (response.status != HttpStatusCode.PartialContent) {
+                    throw DownloadHttpException(
+                        code = response.status.value,
+                        message = response.status.description,
+                        retryAfterMillis = response.headers.retryAfterMillis(),
+                    )
+                }
+                val contentLength = response.headers[HttpHeaders.ContentLength]?.toLongOrNull()
+                if (contentLength != null && contentLength != range.length) {
+                    throw DownloadIntegrityException(range.length, contentLength)
+                }
+                response.headers[HttpHeaders.ContentRange]?.let { contentRange ->
+                    validateContentRange(contentRange, range, metadata.totalBytes)
+                }
 
-            val channel = response.bodyAsChannel()
-            fileSystem.sink(segmentPath).buffer().use { sink ->
-                val buffer = ByteArray(config.bufferSizeBytes)
-                var downloaded = 0L
-                while (!channel.isClosedForRead) {
-                    val read = readWithIdleTimeout(channel, buffer, config.idleTimeoutMs)
-                    if (read < 0) break
-                    if (read == 0) continue
-                    sink.write(buffer, 0, read)
-                    downloaded += read
-                    onSegmentProgress(downloaded)
-                }
-                sink.flush()
-                if (downloaded != range.length) {
-                    throw DownloadIntegrityException(range.length, downloaded)
+                val channel = response.bodyAsChannel()
+                fileSystem.sink(segmentPath).buffer().use { sink ->
+                    val buffer = ByteArray(config.bufferSizeBytes)
+                    var downloaded = 0L
+                    while (!channel.isClosedForRead) {
+                        val read = readWithIdleTimeout(channel, buffer, config.idleTimeoutMs)
+                        if (read < 0) break
+                        if (read == 0) continue
+                        sink.write(buffer, 0, read)
+                        downloaded += read
+                        onSegmentProgress(downloaded)
+                    }
+                    sink.flush()
+                    if (downloaded != range.length) {
+                        throw DownloadIntegrityException(range.length, downloaded)
+                    }
                 }
             }
+        } finally {
+            permit.release()
         }
     }
 
@@ -973,7 +1183,11 @@ class DefaultDownloadManager(
     }
 
     private fun mapThrowable(throwable: Throwable, path: Path): DownloadFailure = when (throwable) {
-        is DownloadHttpException -> DownloadFailure.HttpStatus(throwable.code, throwable.message)
+        is DownloadHttpException -> DownloadFailure.HttpStatus(
+            code = throwable.code,
+            message = throwable.message,
+            retryAfterMillis = throwable.retryAfterMillis,
+        )
         is HttpRequestTimeoutException -> DownloadFailure.Timeout(throwable.message ?: "Request timeout")
         is DownloadStallException -> DownloadFailure.Timeout(throwable.message ?: "Download stalled")
         is DownloadIntegrityException -> DownloadFailure.IntegrityMismatch(throwable.expected, throwable.actual)
@@ -987,10 +1201,30 @@ class DefaultDownloadManager(
             when {
                 msg.contains("permission", ignoreCase = true) -> DownloadFailure.PermissionDenied(path, msg)
                 msg.contains("space", ignoreCase = true) || msg.contains("disk full", ignoreCase = true) -> DownloadFailure.NoSpace(path, msg)
-                else -> DownloadFailure.FileSystem(msg.ifBlank { "File system IO error" })
+                msg.looksLikeNetworkIoFailure() -> DownloadFailure.Network(msg.ifBlank { "Network IO error" })
+                else -> DownloadFailure.FileSystem(msg.ifBlank { "File system IO error at $path" })
             }
         }
         else -> DownloadFailure.Network(throwable.message ?: "Network error")
+    }
+
+    private fun String.looksLikeNetworkIoFailure(): Boolean {
+        val networkTerms = listOf(
+            "connect",
+            "connection",
+            "socket",
+            "stream",
+            "host",
+            "dns",
+            "tls",
+            "ssl",
+            "reset",
+            "refused",
+            "route",
+            "protocol",
+            "unexpected end",
+        )
+        return networkTerms.any { contains(it, ignoreCase = true) }
     }
 
     private fun defaultDestinationFor(request: DownloadRequest, id: DownloadId): Path {
@@ -1072,12 +1306,12 @@ class DefaultDownloadManager(
             snapshots = snapshots.toMap(),
             pending = pending,
             active = active.keys.toSet(),
-            maxConcurrentDownloads = runtimeConfig.maxConcurrentDownloads,
+            maxConcurrentDownloads = maxConcurrentDownloads,
         )
     }
 
     private fun DownloadRequest.unsupportedByDefaultManagerReason(): String? {
-        if (maxSegments > 1 && method != HttpMethod.Get) {
+        if (segmentation is DownloadSegmentation.Fixed && segmentation.segments > 1 && method != HttpMethod.Get) {
             return "Segmented range downloads support GET only."
         }
         if (constraints.requireWifi || constraints.requireCharging) {
@@ -1088,12 +1322,53 @@ class DefaultDownloadManager(
         }
         return null
     }
+
+    private fun resolveConcurrentDownloads(concurrency: DownloadConcurrency): Int =
+        when (concurrency) {
+            DownloadConcurrency.Auto -> 3
+            is DownloadConcurrency.Fixed -> concurrency.downloads
+        }
+
+    private fun resolveSegmentCount(segmentation: DownloadSegmentation, totalBytes: Long): Int =
+        when (segmentation) {
+            DownloadSegmentation.Auto -> autoSegmentCount(totalBytes)
+            DownloadSegmentation.SingleStream -> 1
+            is DownloadSegmentation.Fixed -> segmentation.segments
+        }
+
+    private fun autoSegmentCount(totalBytes: Long): Int {
+        val mib = 1024L * 1024L
+        return when {
+            totalBytes < 16L * mib -> 1
+            totalBytes < 128L * mib -> 2
+            totalBytes < 512L * mib -> 4
+            else -> 6
+        }
+    }
+
+    private fun originKey(url: String): String {
+        return try {
+            val parsed = Url(url)
+            val port = parsed.port.takeIf { it > 0 } ?: parsed.protocol.defaultPort
+            "${parsed.protocol.name}://${parsed.host}:$port"
+        } catch (t: Throwable) {
+            url.substringBefore('?').substringBefore('#').substringBefore('/', missingDelimiterValue = url)
+        }
+    }
+
+    private fun Headers.retryAfterMillis(): Long? {
+        val raw = this[HttpHeaders.RetryAfter]?.trim() ?: return null
+        return raw.toLongOrNull()
+            ?.coerceAtLeast(0L)
+            ?.let { it * 1_000L }
+    }
 }
 
 private data object PauseCancellationException : CancellationException("Paused by user")
 
 private class DownloadHttpException(
     val code: Int,
+    val retryAfterMillis: Long? = null,
     message: String?,
 ) : RuntimeException(message)
 

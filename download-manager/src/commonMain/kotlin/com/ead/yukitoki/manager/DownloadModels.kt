@@ -29,14 +29,32 @@ data class DownloadRequest(
     val expectedSizeBytes: Long? = null,
     val progressGranularity: ProgressGranularity = ProgressGranularity(),
     val priority: DownloadPriority = DownloadPriority.NORMAL,
-    val maxSegments: Int = 1,
+    val segmentation: DownloadSegmentation = DownloadSegmentation.Auto,
     val expectedChecksum: ChecksumSpec? = null,
     val constraints: DownloadConstraints = DownloadConstraints.default(),
 ) {
     init {
         require(url.isNotBlank()) { "url must not be blank" }
-        require(maxSegments >= 1) { "maxSegments must be >= 1" }
         require(expectedSizeBytes == null || expectedSizeBytes >= 0L) { "expectedSizeBytes must be >= 0" }
+    }
+}
+
+sealed interface DownloadSegmentation {
+    /**
+     * Let the manager decide whether a file should use HTTP byte-range workers.
+     * Small files stay single-stream; larger files use bounded parallel ranges only
+     * when the server advertises safe range support.
+     */
+    data object Auto : DownloadSegmentation
+
+    /** Force the simple single-stream path. This is the safest option for unusual servers. */
+    data object SingleStream : DownloadSegmentation
+
+    /** Cap per-file range workers. The manager may still fall back to single-stream. */
+    data class Fixed(val segments: Int) : DownloadSegmentation {
+        init {
+            require(segments >= 1) { "segments must be >= 1" }
+        }
     }
 }
 
@@ -111,7 +129,7 @@ data class ProgressGranularity(
 }
 
 data class DownloadManagerConfig(
-    val maxConcurrentDownloads: Int = 2,
+    val concurrency: DownloadConcurrency = DownloadConcurrency.Auto,
     val bufferSizeBytes: Int = 64 * 1024,
     val deletePartialOnFailure: Boolean = true,
     val deletePartialOnCancel: Boolean = true,
@@ -120,13 +138,21 @@ data class DownloadManagerConfig(
      * milliseconds the attempt fails with [DownloadFailure.Timeout] (and may retry).
      * Set to 0 to disable. This guards against stalled sockets independently of the
      * caller's [io.ktor.client.HttpClient] timeout configuration.
-     */
+    */
     val idleTimeoutMs: Long = 30_000,
 ) {
     init {
-        require(maxConcurrentDownloads >= 1) { "maxConcurrentDownloads must be >= 1" }
         require(bufferSizeBytes >= 4 * 1024) { "bufferSizeBytes must be >= 4KB" }
         require(idleTimeoutMs >= 0) { "idleTimeoutMs must be >= 0 (0 disables)" }
+    }
+}
+
+sealed interface DownloadConcurrency {
+    data object Auto : DownloadConcurrency
+    data class Fixed(val downloads: Int) : DownloadConcurrency {
+        init {
+            require(downloads >= 1) { "downloads must be >= 1" }
+        }
     }
 }
 
@@ -159,7 +185,11 @@ data class DownloadSuccess(
 )
 
 sealed interface DownloadFailure {
-    data class HttpStatus(val code: Int, val message: String? = null) : DownloadFailure
+    data class HttpStatus(
+        val code: Int,
+        val message: String? = null,
+        val retryAfterMillis: Long? = null,
+    ) : DownloadFailure
     data class Network(val message: String) : DownloadFailure
     data class Timeout(val message: String) : DownloadFailure
     data class PermissionDenied(val path: Path? = null, val message: String? = null) : DownloadFailure
@@ -194,7 +224,7 @@ data class DownloadManagerState(
     val maxConcurrentDownloads: Int,
 )
 
-sealed interface DownloadCommand {
+internal sealed interface DownloadCommand {
     data class Enqueue(val request: DownloadRequest, val id: DownloadId = DownloadId.new()) : DownloadCommand
     data class Pause(val id: DownloadId) : DownloadCommand
     data class Resume(val id: DownloadId) : DownloadCommand
@@ -205,7 +235,7 @@ sealed interface DownloadCommand {
     data class Retry(val id: DownloadId) : DownloadCommand
     data object RetryAllFailed : DownloadCommand
     data class Move(val id: DownloadId, val newPosition: Int) : DownloadCommand
-    data class SetConcurrency(val maxConcurrentDownloads: Int) : DownloadCommand
+    data class SetConcurrency(val concurrency: DownloadConcurrency) : DownloadCommand
 }
 
 sealed interface CommandAck {

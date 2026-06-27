@@ -51,16 +51,16 @@ fun statusLabel(state: DownloadState): String = when (state) {
 }
 
 fun failureLabel(failure: DownloadFailure): String = when (failure) {
-    is DownloadFailure.HttpStatus -> "HTTP ${failure.code}"
-    is DownloadFailure.Network -> "network error"
-    is DownloadFailure.Timeout -> "timeout"
-    is DownloadFailure.PermissionDenied -> "permission denied"
-    is DownloadFailure.NoSpace -> "no space"
-    is DownloadFailure.AlreadyExists -> "already exists"
-    is DownloadFailure.FileSystem -> "file system error"
-    is DownloadFailure.IntegrityMismatch -> "size mismatch"
+    is DownloadFailure.HttpStatus -> failure.message?.let { "HTTP ${failure.code}: $it" } ?: "HTTP ${failure.code}"
+    is DownloadFailure.Network -> "network error: ${failure.message}"
+    is DownloadFailure.Timeout -> "timeout: ${failure.message}"
+    is DownloadFailure.PermissionDenied -> failure.message?.let { "permission denied: $it" } ?: "permission denied"
+    is DownloadFailure.NoSpace -> failure.message?.let { "no space: $it" } ?: "no space"
+    is DownloadFailure.AlreadyExists -> failure.message?.let { "already exists: $it" } ?: "already exists"
+    is DownloadFailure.FileSystem -> "file system error: ${failure.message}"
+    is DownloadFailure.IntegrityMismatch -> "size mismatch: expected ${formatBytes(failure.expectedSize)}, got ${formatBytes(failure.actualSize)}"
     is DownloadFailure.ChecksumMismatch -> "checksum mismatch"
-    is DownloadFailure.ServerChanged -> "server file changed"
+    is DownloadFailure.ServerChanged -> "server file changed: ${failure.message}"
     is DownloadFailure.CancelledByUser -> "cancelled"
     is DownloadFailure.PausedByUser -> "paused"
     is DownloadFailure.Unknown -> failure.message

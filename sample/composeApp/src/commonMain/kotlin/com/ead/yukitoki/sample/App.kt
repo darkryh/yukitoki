@@ -58,6 +58,7 @@ import com.ead.yukitoki.sample.ui.components.UrlInputBar
 import com.ead.yukitoki.sample.ui.components.formatSpeed
 import com.ead.yukitoki.sample.ui.theme.YukitokiTheme
 import kotlinx.coroutines.delay
+import kotlin.time.Duration.Companion.milliseconds
 
 enum class DownloadCategory(val label: String) {
     ALL("All"),
@@ -94,7 +95,7 @@ fun App(environment: DownloadEnvironment) {
             if (speedSamples.size > 25) {
                 speedSamples.removeAt(0)
             }
-            delay(1000)
+            delay(1000.milliseconds)
         }
     }
 
@@ -219,7 +220,7 @@ fun App(environment: DownloadEnvironment) {
                                     modifier = Modifier.fillMaxWidth(),
                                     verticalArrangement = Arrangement.spacedBy(8.dp)
                                 ) {
-                                    DownloadCategory.values().forEach { category ->
+                                    DownloadCategory.entries.forEach { category ->
                                         val count = when (category) {
                                             DownloadCategory.ALL -> allCount
                                             DownloadCategory.ACTIVE -> activeCount
@@ -388,7 +389,7 @@ fun App(environment: DownloadEnvironment) {
                                 .horizontalScroll(rememberScrollState()),
                             horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                            DownloadCategory.values().forEach { category ->
+                            DownloadCategory.entries.forEach { category ->
                                 val count = when (category) {
                                     DownloadCategory.ALL -> allCount
                                     DownloadCategory.ACTIVE -> activeCount
