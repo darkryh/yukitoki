@@ -3,10 +3,7 @@ package io.github.darkryh.yukitoki.buildlogic
 import com.vanniktech.maven.publish.MavenPublishBaseExtension
 import org.gradle.api.Plugin
 import org.gradle.api.Project
-import org.gradle.api.publish.PublishingExtension
-import org.gradle.api.publish.maven.MavenPublication
 import org.gradle.kotlin.dsl.configure
-import org.gradle.kotlin.dsl.register
 
 class MavenPublishConventionPlugin : Plugin<Project> {
     override fun apply(target: Project) {
@@ -52,22 +49,6 @@ class MavenPublishConventionPlugin : Plugin<Project> {
                             organizationUrl.set("https://github.com/darkryh")
                         }
                     }
-                }
-            }
-
-            val validateMavenLocalPublication = tasks.register<ValidateMavenLocalPublicationTask>("validateMavenLocalPublication") {
-                group = "publishing"
-                description = "Publishes this module to Maven local and verifies every publication directory has a POM."
-                dependsOn("publishToMavenLocal")
-                groupId.set(project.group.toString())
-                versionName.set(project.version.toString())
-                mavenLocal.fileValue(project.gradle.gradleUserHomeDir.resolve("../.m2/repository").canonicalFile)
-            }
-
-            afterEvaluate {
-                val publishing = extensions.getByType(PublishingExtension::class.java)
-                validateMavenLocalPublication.configure {
-                    artifactIds.set(publishing.publications.withType(MavenPublication::class.java).map { it.artifactId })
                 }
             }
         }

@@ -9,7 +9,7 @@ kotlin {
     jvm()
 
     android {
-        namespace = "com.ead.yukitoki.manager"
+        namespace = "io.github.darkryh.yukitoki.manager"
         compileSdk = libs.versions.android.compileSdk.get().toInt()
         minSdk = libs.versions.android.minSdk.get().toInt()
     }
@@ -38,9 +38,9 @@ kotlin {
         iosSimulatorArm64Main.get().dependsOn(iosMain)
 
         commonMain.dependencies {
-            implementation(libs.ktor.client.core)
-            implementation(libs.kotlinx.coroutines.core)
-            implementation(libs.okio)
+            api(libs.ktor.client.core)
+            api(libs.kotlinx.coroutines.core)
+            api(libs.okio)
         }
 
         commonTest.dependencies {

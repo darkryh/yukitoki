@@ -4,11 +4,11 @@ plugins {
 }
 
 android {
-    namespace = "com.ead.yukitoki.sample"
+    namespace = "io.github.darkryh.yukitoki.sample"
     compileSdk = libs.versions.android.compileSdk.get().toInt()
 
     defaultConfig {
-        applicationId = "com.ead.yukitoki.sample"
+        applicationId = "io.github.darkryh.yukitoki.sample"
         minSdk = libs.versions.android.minSdk.get().toInt()
         targetSdk = libs.versions.android.compileSdk.get().toInt()
         versionCode = 1

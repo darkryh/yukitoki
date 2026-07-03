@@ -11,7 +11,7 @@ kotlin {
     jvmToolchain(17)
 
     android {
-        namespace = "com.ead.yukitoki.sample.shared"
+        namespace = "io.github.darkryh.yukitoki.sample.shared"
         compileSdk = libs.versions.android.compileSdk.get().toInt()
         minSdk = libs.versions.android.minSdk.get().toInt()
     }
@@ -63,7 +63,7 @@ kotlin {
 
 compose.desktop {
     application {
-        mainClass = "com.ead.yukitoki.sample.MainKt"
+        mainClass = "io.github.darkryh.yukitoki.sample.MainKt"
         nativeDistributions {
             targetFormats(TargetFormat.Dmg, TargetFormat.Msi, TargetFormat.Deb)
             packageName = "YukitokiSample"

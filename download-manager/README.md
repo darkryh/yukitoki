@@ -18,7 +18,7 @@ Targets: JVM, Android, iOS (arm64 + simulator arm64), wasmJs.
 - Segmented parallel range downloads when the server advertises byte-range support
 - Integrity checks for expected byte count, `Content-Length`, and optional MD5 / SHA-256 checksums
 - Overwrite policies (`REPLACE`, `FAIL_IF_EXISTS`, `RENAME_UNIQUE`)
-- Command API (`enqueue`, `pause`, `resume`, `cancel`, `retry`, `reorder`, `setConcurrency`)
+- Command API (`enqueue`, `pause`, `resume`, `cancel`, `retry`, `move`, `setConcurrency`)
 - Browser/Wasm download intents for cases where the browser owns the actual download
 
 ## Install
@@ -121,7 +121,7 @@ If you always pass an explicit `DownloadRequest.destinationPath`, this is not re
 - `deletePartialOnFailure` / `deletePartialOnCancel` (default true).
 - `idleTimeoutMs` (default 30 000) — per-attempt stall guard: if no bytes arrive for this long the attempt fails with `DownloadFailure.Timeout` (and may retry). Set `0` to disable. This is independent of, and complementary to, your `HttpClient` connect/request timeouts.
 
-Per-request options live on `DownloadRequest`: `overwritePolicy`, `retryPolicy`, `expectedSizeBytes`, `expectedChecksum`, `segmentation`, `priority`, `progressGranularity`, custom `headers`, `fileName`.
+Per-request options live on `DownloadRequest` and are also available on the simple `enqueue(...)` / `download(...)` overloads: `overwritePolicy`, `retryPolicy`, `expectedSizeBytes`, `expectedChecksum`, `segmentation`, `priority`, `progressGranularity`, custom `headers`, `fileName`, and `method`.
 
 ```kotlin
 val request = DownloadRequest(
@@ -130,6 +130,8 @@ val request = DownloadRequest(
     segmentation = DownloadSegmentation.Fixed(4), // optional advanced override
 )
 ```
+
+`DownloadRequest` rejects unsafe inputs at construction time: blank or relative URLs, unsupported URL schemes, negative expected sizes, malformed checksum hex values, and `fileName` values that contain path separators or characters unsafe across supported platforms. `DefaultDownloadManager` accepts HTTP(S) URLs; browser download intents may also use browser-owned schemes such as `data:` and `blob:`.
 
 ## Production contract
 
@@ -143,11 +145,11 @@ val request = DownloadRequest(
 - Cancel and failure cleanup follow `DownloadManagerConfig.deletePartialOnCancel` and `deletePartialOnFailure`.
 - Retries are attempted only for network failures, timeouts (including the idle/stall timeout), HTTP 5xx, 408, and 429, and use the configured exponential backoff and jitter.
 - Caller-supplied `Range` is rejected because resume headers are owned by the manager.
-- Network and charging constraints are rejected by the default manager; enforce them in a platform scheduler before enqueue.
+- Network and charging constraints are intentionally outside the request model; enforce them in a platform scheduler before enqueue.
 
 ## Wasm
 
-Browsers do not expose a normal writable Downloads directory to Kotlin/Wasm. Use `DownloadIntents.dispatch(request)` on wasm for simple GET downloads. It creates a browser download intent and returns once the browser accepts the intent; it does not claim byte progress, final filesystem path, checksum validation, custom headers, or charging/network constraints.
+Browsers do not expose a normal writable Downloads directory to Kotlin/Wasm. Use `DownloadIntents.dispatch(request)` on wasm for simple GET downloads. It creates a browser download intent and returns once the browser accepts the intent; it does not claim byte progress, final filesystem path, checksum validation, or custom headers.
 
 For authenticated exports or checksum-required assets on wasm, prefer a server-issued same-origin URL or short-lived signed URL and let the browser handle the download.
 
