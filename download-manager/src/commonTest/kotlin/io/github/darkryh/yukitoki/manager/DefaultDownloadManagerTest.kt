@@ -58,6 +58,9 @@ class DefaultDownloadManagerTest {
         ioDispatcher = StandardTestDispatcher(testScheduler),
     )
 
+    private fun DownloadState?.isTerminal(): Boolean =
+        this is DownloadState.Succeeded || this is DownloadState.Failed || this is DownloadState.Cancelled
+
     @Test
     fun `enqueue and download succeed`() = runTest {
         val payload = "hello".encodeToByteArray()
@@ -114,30 +117,30 @@ class DefaultDownloadManagerTest {
                         request = DownloadRequest(
                             url = "https://example.com/$idx.bin",
                             destinationPath = "/bulk/$idx.bin".toPath(),
+                            // This test exercises the queue-level concurrency bound, not
+                            // per-file segmentation. SingleStream keeps every download on one
+                            // request so the drain stays fully on the virtual test clock;
+                            // Auto segmentation's per-origin pacing uses the real wall clock,
+                            // which does not advance under the test scheduler.
+                            segmentation = DownloadSegmentation.SingleStream,
                         )
                     )
                 )
                 id
             }
 
-            withTimeout(20_000) {
-                while (true) {
-                    val state = manager.state.value
-                    val terminalCount = ids.count { id ->
-                        when (state.snapshots[id]?.state) {
-                            is DownloadState.Succeeded, is DownloadState.Failed, is DownloadState.Cancelled -> true
-                            else -> false
-                        }
-                    }
-                    if (terminalCount == ids.size) break
-                    delay(20)
-                }
-            }
+            // Suspend until every download has succeeded. Collecting the manager's own
+            // StateFlow with `first { }` yields to the scheduler/event loop identically on
+            // JVM, Native and JS, so there is no polling budget or wall-clock timeout to
+            // race. The previous `withTimeout(...) { delay(20) }` poll was flaky on the iOS
+            // simulator, and a fixed-step scheduler pump did not drive the JS event loop.
+            manager.state.first { st -> ids.all { st.snapshots[it]?.state is DownloadState.Succeeded } }
+
             val final = manager.state.value
-            ids.forEach { id ->
-                assertTrue(final.snapshots[id]?.state is DownloadState.Succeeded)
-            }
-            assertTrue(final.active.size <= 3)
+            // All 20 completed under a bound of 3 without deadlocking or stranding work,
+            // and the queue reflects the configured concurrency limit.
+            assertEquals(3, final.maxConcurrentDownloads)
+            assertTrue(final.active.isEmpty())
             assertTrue(final.pending.isEmpty())
         } finally {
             manager.shutdown()
@@ -527,19 +530,9 @@ class DefaultDownloadManagerTest {
             manager.submitInternal(DownloadCommand.SetConcurrency(DownloadConcurrency.Fixed(5)))
             ids.drop(10).take(5).forEachIndexed { i, id -> manager.submitInternal(DownloadCommand.Move(id, i)) }
 
-            withTimeout(20_000) {
-                while (true) {
-                    val state = manager.state.value
-                    val done = ids.count { id ->
-                        when (state.snapshots[id]?.state) {
-                            is DownloadState.Succeeded, is DownloadState.Failed, is DownloadState.Cancelled -> true
-                            else -> false
-                        }
-                    }
-                    if (done == ids.size) break
-                    delay(20)
-                }
-            }
+            // Suspend until every download reaches a terminal state (see the concurrency
+            // test above for why the StateFlow's `first { }` is used instead of a timed poll).
+            manager.state.first { st -> ids.all { st.snapshots[it]?.state.isTerminal() } }
             val finalState = manager.state.value
             assertTrue(finalState.pending.isEmpty())
             assertTrue(finalState.active.isEmpty())
