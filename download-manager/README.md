@@ -24,11 +24,17 @@ Targets: JVM, Android, iOS (arm64 + simulator arm64), wasmJs.
 ## Install
 
 ```kotlin
-// settings.gradle.kts → mavenCentral() / mavenLocal()
+// settings.gradle.kts → mavenCentral()
 dependencies {
-    implementation("io.github.darkryh.yukitoki:download-manager:1.0.0")
+    implementation("io.github.darkryh.yukitoki:download-manager:1.0.0-beta01")
 }
 ```
+
+You also provide a Ktor `HttpClient` with a per-target engine (OkHttp / CIO / Darwin / Js).
+`ktor-client-core`, `kotlinx-coroutines-core`, and `okio` come transitively.
+
+> **Full documentation** — tutorial, how-to guides, complete API reference, and architecture notes —
+> lives in [`../docs`](../docs/README.md). This page is a condensed overview.
 
 ## Quick usage
 
