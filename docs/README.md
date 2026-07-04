@@ -2,7 +2,7 @@
 
 Documentation for the Yukitoki Kotlin Multiplatform download manager, organized by what you need.
 
-These docs describe `1.0.0-beta01`.
+These docs describe `1.0.0-beta02`.
 
 ## Tutorial — *learning*
 

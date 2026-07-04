@@ -1,7 +1,7 @@
 # API reference
 
 Complete reference for the public API of `io.github.darkryh.yukitoki:download-manager`, version
-`1.0.0-beta01`. All types are in the package `io.github.darkryh.yukitoki.manager`.
+`1.0.0-beta02`. All types are in the package `io.github.darkryh.yukitoki.manager`.
 
 For task-oriented usage see the [how-to guides](../); for a guided introduction see
 [Getting started](../getting-started.md).

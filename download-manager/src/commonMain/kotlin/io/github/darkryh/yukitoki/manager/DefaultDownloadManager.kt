@@ -21,7 +21,10 @@ import kotlin.math.min
 import kotlin.math.pow
 import kotlin.random.Random
 import kotlin.time.Clock
+import kotlin.time.ComparableTimeMark
+import kotlin.time.Duration
 import kotlin.time.Duration.Companion.milliseconds
+import kotlin.time.TimeSource
 
 class DefaultDownloadManager(
     private val httpClient: HttpClient,
@@ -29,6 +32,12 @@ class DefaultDownloadManager(
     private val fileSystem: FileSystem = PlatformDownloadFileSystem.default,
     config: DownloadManagerConfig = DownloadManagerConfig(),
     private val ioDispatcher: CoroutineDispatcher = platformIoDispatcher,
+    // Time source for origin-pacing decisions. Defaults to the monotonic clock (immune to
+    // NTP steps); tests inject the coroutine test scheduler's time source so pacing delays
+    // advance in lockstep with delay() under virtual time instead of racing the wall clock.
+    private val timeSource: TimeSource.WithComparableMarks = TimeSource.Monotonic,
+    // Jitter source for adaptive rate-limit back-off; injectable so tests are reproducible.
+    private val random: Random = Random.Default,
 ) : DownloadManager {
     private data class WorkerHandle(
         val id: DownloadId,
@@ -53,15 +62,19 @@ class DefaultDownloadManager(
     private data class OriginProfile(
         var activeRequests: Int = 0,
         var maxParallelRequests: Int = 4,
-        var penaltyUntilMs: Long = 0L,
+        var penaltyUntil: ComparableTimeMark? = null,
         var recentRateLimits: Int = 0,
         var lastGoodSegmentCount: Int? = null,
     )
 
     private inner class OriginPermit(private val origin: String) {
-        suspend fun release() {
+        // release() runs from a finally while sibling segments are being cancelled (e.g. after
+        // a 429). The decrement must survive the caller's cancellation, otherwise the permit
+        // leaks and the origin's parallelism budget shrinks permanently — which can wedge
+        // acquireOriginPermit in its wait loop. NonCancellable guarantees the update completes.
+        suspend fun release() = withContext(NonCancellable) {
             originMutex.withLock {
-                val profile = originProfiles[origin] ?: return
+                val profile = originProfiles[origin] ?: return@withLock
                 profile.activeRequests = (profile.activeRequests - 1).coerceAtLeast(0)
             }
         }
@@ -823,9 +836,10 @@ class DefaultDownloadManager(
                 }
                 val httpFailure = t.findDownloadHttpException()
                 if (httpFailure?.code == 429 && segmentCount > 1) {
-                    val retryDelay = httpFailure.retryAfterMillis ?: computeAdaptiveRateLimitDelayMs(segmentCount)
+                    val retryDelay = httpFailure.retryAfterMillis?.milliseconds
+                        ?: computeAdaptiveRateLimitDelay(segmentCount)
                     recordOriginRateLimit(origin, segmentCount, retryDelay)
-                    delay(retryDelay.milliseconds)
+                    delay(retryDelay)
                     desiredSegments = (segmentCount / 2).coerceAtLeast(1)
                     if (desiredSegments <= 1) return false
                     continue
@@ -846,47 +860,50 @@ class DefaultDownloadManager(
         return null
     }
 
-    private fun computeAdaptiveRateLimitDelayMs(segmentCount: Int): Long {
+    private fun computeAdaptiveRateLimitDelay(segmentCount: Int): Duration {
         val base = 750L * segmentCount
-        val jitter = Random.nextLong(0L, 750L)
-        return (base + jitter).coerceAtMost(15_000L)
+        val jitter = random.nextLong(0L, 750L)
+        return (base + jitter).coerceAtMost(15_000L).milliseconds
     }
 
     private suspend fun acquireOriginPermit(origin: String): OriginPermit {
         while (true) {
-            val waitMs = originMutex.withLock {
-                val now = Clock.System.now().toEpochMilliseconds()
+            val wait = originMutex.withLock {
+                val now = timeSource.markNow()
                 val profile = originProfiles.getOrPut(origin) { OriginProfile() }
+                val penalty = profile.penaltyUntil
                 when {
-                    profile.penaltyUntilMs > now -> profile.penaltyUntilMs - now
+                    penalty != null && penalty > now -> penalty - now
                     profile.activeRequests < profile.maxParallelRequests -> {
                         profile.activeRequests += 1
                         return OriginPermit(origin)
                     }
-                    else -> 50L
+                    else -> 50.milliseconds
                 }
             }
-            delay(waitMs.coerceAtLeast(1L).milliseconds)
+            delay(wait.coerceAtLeast(1.milliseconds))
         }
     }
 
     private suspend fun recommendedSegmentCount(origin: String, desiredSegments: Int): Int =
         originMutex.withLock {
-            val now = Clock.System.now().toEpochMilliseconds()
+            val now = timeSource.markNow()
             val profile = originProfiles.getOrPut(origin) { OriginProfile() }
             val rememberedCap = profile.lastGoodSegmentCount ?: desiredSegments
-            val pressureCap = if (profile.penaltyUntilMs > now) 1 else profile.maxParallelRequests
+            val underPenalty = profile.penaltyUntil?.let { it > now } ?: false
+            val pressureCap = if (underPenalty) 1 else profile.maxParallelRequests
             min(desiredSegments, min(rememberedCap, pressureCap)).coerceAtLeast(1)
         }
 
-    private suspend fun recordOriginRateLimit(origin: String, segmentCount: Int, retryDelayMs: Long) {
+    private suspend fun recordOriginRateLimit(origin: String, segmentCount: Int, retryDelay: Duration) {
         originMutex.withLock {
-            val now = Clock.System.now().toEpochMilliseconds()
             val profile = originProfiles.getOrPut(origin) { OriginProfile() }
             profile.recentRateLimits += 1
             profile.maxParallelRequests = (min(profile.maxParallelRequests, segmentCount) / 2).coerceAtLeast(1)
             profile.lastGoodSegmentCount = min(profile.lastGoodSegmentCount ?: profile.maxParallelRequests, profile.maxParallelRequests)
-            profile.penaltyUntilMs = max(profile.penaltyUntilMs, now + retryDelayMs)
+            val candidate = timeSource.markNow() + retryDelay
+            val current = profile.penaltyUntil
+            profile.penaltyUntil = if (current == null || candidate > current) candidate else current
         }
     }
 
@@ -1183,7 +1200,7 @@ class DefaultDownloadManager(
         val bounded = exp.toLong().coerceAtMost(policy.maxDelayMs)
         val jitterSpan = (bounded * policy.jitterRatio).toLong()
         if (jitterSpan <= 0) return bounded
-        val jitter = Random.nextLong(from = -jitterSpan, until = jitterSpan + 1)
+        val jitter = random.nextLong(from = -jitterSpan, until = jitterSpan + 1)
         return (bounded + jitter).coerceAtLeast(0L)
     }
 

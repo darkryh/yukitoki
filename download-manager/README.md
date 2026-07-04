@@ -26,7 +26,7 @@ Targets: JVM, Android, iOS (arm64 + simulator arm64), wasmJs.
 ```kotlin
 // settings.gradle.kts → mavenCentral()
 dependencies {
-    implementation("io.github.darkryh.yukitoki:download-manager:1.0.0-beta01")
+    implementation("io.github.darkryh.yukitoki:download-manager:1.0.0-beta02")
 }
 ```
 

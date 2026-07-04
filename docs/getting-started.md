@@ -34,7 +34,7 @@ dependencyResolutionManagement {
 ```kotlin
 // build.gradle.kts
 dependencies {
-    implementation("io.github.darkryh.yukitoki:download-manager:1.0.0-beta01")
+    implementation("io.github.darkryh.yukitoki:download-manager:1.0.0-beta02")
     implementation("io.ktor:ktor-client-cio:3.5.1")
 }
 ```
