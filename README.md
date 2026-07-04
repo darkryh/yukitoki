@@ -5,7 +5,7 @@ a parallel queue, pause/resume, retries, segmented range downloads, checksums, a
 
 Built for coroutines — it drops straight into a `ViewModel` and Compose / Compose Multiplatform.
 
-**Current version:** `1.0.0-beta01` · [changelog](CHANGELOG.md)
+**Current version:** `1.0.0-beta02` · [changelog](CHANGELOG.md)
 
 **Targets:** JVM · Android · iOS (arm64 + simulator arm64) · wasmJs (browser)
 
@@ -41,7 +41,7 @@ dependencyResolutionManagement {
 ```kotlin
 // build.gradle.kts — in your KMP module's commonMain (or a JVM/Android module)
 dependencies {
-    implementation("io.github.darkryh.yukitoki:download-manager:1.0.0-beta01")
+    implementation("io.github.darkryh.yukitoki:download-manager:1.0.0-beta02")
 }
 ```
 

@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0-beta02] - 2026-07-03
+
+Reliability fixes for segmented downloads and rate-limit pacing. No public API changes —
+`1.0.0-beta01` code continues to work unchanged.
+
+### Fixed
+
+- **Rate-limit pacing uses a monotonic clock.** Per-origin backpressure and `429` back-off now
+  measure time with a monotonic source instead of the system wall clock, so segmented-download
+  pacing stays correct even if the system clock is stepped (for example by an NTP adjustment).
+- **Segment permit leak on cancellation.** When a segmented download was cancelled while retrying
+  after a `429`, a per-origin request permit could leak, permanently shrinking that host's effective
+  parallelism. Permit release is now cancellation-safe.
+
+### Changed
+
+- Test suite made deterministic across JVM, Native, and JS (virtual-clock pacing and a thread-safe
+  in-memory test filesystem), removing intermittent CI failures in the segmentation tests.
+
 ## [1.0.0-beta01] - 2026-07-03
 
 First public beta of the Yukitoki Kotlin Multiplatform download manager.
@@ -44,5 +63,6 @@ First public beta of the Yukitoki Kotlin Multiplatform download manager.
   the browser owns the actual transfer.
 - **Sample app** — a shared Compose Multiplatform UI running on Android, iOS, and desktop.
 
-[Unreleased]: https://github.com/darkryh/yukitoki/compare/v1.0.0-beta01...HEAD
+[Unreleased]: https://github.com/darkryh/yukitoki/compare/v1.0.0-beta02...HEAD
+[1.0.0-beta02]: https://github.com/darkryh/yukitoki/compare/v1.0.0-beta01...v1.0.0-beta02
 [1.0.0-beta01]: https://github.com/darkryh/yukitoki/releases/tag/v1.0.0-beta01
