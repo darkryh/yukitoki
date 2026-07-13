@@ -10,7 +10,7 @@ plugins {
 }
 
 group = providers.gradleProperty("yukitokiGroup").orElse("io.github.darkryh.yukitoki").get()
-version = providers.gradleProperty("yukitokiVersion").orElse("1.0.0").get()
+version = providers.gradleProperty("yukitokiVersion").orElse("1.0.0-SNAPSHOT").get()
 
 subprojects {
     group = rootProject.group

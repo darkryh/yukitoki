@@ -8,6 +8,8 @@ import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpMethod
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.headersOf
+import io.ktor.utils.io.ByteChannel
+import io.ktor.utils.io.writeStringUtf8
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.async
@@ -28,6 +30,8 @@ import okio.IOException
 import okio.Path.Companion.toPath
 import okio.fakefilesystem.FakeFileSystem
 import kotlin.random.Random
+import kotlin.time.Duration
+import kotlin.time.Duration.Companion.milliseconds
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
@@ -59,7 +63,7 @@ class DefaultDownloadManagerTest {
         // The idle-timeout watchdog is a wall-clock reliability feature; under a virtual
         // test clock a jump (advanceTimeBy / advanceUntilIdle) would trip it spuriously,
         // so disable it here and cover it with a real-dispatcher test instead.
-        config = config.copy(idleTimeoutMs = 0),
+        config = config.copy(idleTimeout = Duration.ZERO),
         ioDispatcher = StandardTestDispatcher(testScheduler),
         // Drive origin-pacing time from the same virtual scheduler as delay(), so rate-limit
         // penalties advance deterministically instead of racing the real wall clock. This is
@@ -99,7 +103,7 @@ class DefaultDownloadManagerTest {
                 )
             )
         )
-        assertIs<CommandAck.Accepted>(ack)
+        assertIs<CommandResult.Accepted>(ack)
 
         val result = manager.await(id)
         assertIs<DownloadResult.Success>(result)
@@ -133,7 +137,7 @@ class DefaultDownloadManagerTest {
                             // request so the drain stays fully on the virtual test clock;
                             // Auto segmentation's per-origin pacing uses the real wall clock,
                             // which does not advance under the test scheduler.
-                            segmentation = DownloadSegmentation.SingleStream,
+                            segmentation = DownloadSegmentation.Single,
                         )
                     )
                 )
@@ -187,7 +191,7 @@ class DefaultDownloadManagerTest {
                         multiplier = 1.0,
                         jitterRatio = 0.0,
                     ),
-                    segmentation = DownloadSegmentation.SingleStream,
+                    segmentation = DownloadSegmentation.Single,
                 )
             )
         )
@@ -214,7 +218,7 @@ class DefaultDownloadManagerTest {
             DownloadCommand.Enqueue(id = id2, request = DownloadRequest("https://x/2", "/tmp/2.bin".toPath()))
         )
         val pauseAck = manager.submitInternal(DownloadCommand.Pause(id2))
-        assertIs<CommandAck.Accepted>(pauseAck)
+        assertIs<CommandResult.Accepted>(pauseAck)
         val pauseState = manager.state.value.snapshots[id2]?.state
         assertTrue(pauseState is DownloadState.Paused || pauseState is DownloadState.Queued)
         manager.submitInternal(DownloadCommand.Resume(id2))
@@ -243,12 +247,11 @@ class DefaultDownloadManagerTest {
         runCurrent()
         manager.submitInternal(DownloadCommand.Enqueue(id = id2, request = DownloadRequest("https://x/2", "/tmp/b.bin".toPath())))
         val ack = manager.submitInternal(DownloadCommand.Cancel(id2))
-        assertIs<CommandAck.Accepted>(ack)
+        assertIs<CommandResult.Accepted>(ack)
         releaseFirstDownload.complete(Unit)
         assertIs<DownloadResult.Success>(manager.await(id1))
         val cancelled = manager.await(id2)
-        assertIs<DownloadResult.Failure>(cancelled)
-        assertIs<DownloadFailure.CancelledByUser>(cancelled.failure)
+        assertIs<DownloadResult.Cancelled>(cancelled)
         manager.shutdown()
         client.close()
     }
@@ -257,14 +260,10 @@ class DefaultDownloadManagerTest {
     fun `cancel active item cleans partial file when configured`() = runTest {
         val fs = FakeFileSystem()
         val finalPath = "/tmp/active-cancel.bin".toPath()
-        val partPath = "/tmp/active-cancel.bin.part".toPath()
-        fs.createDirectories(partPath.parent!!)
-        fs.write(partPath) { writeUtf8("partial") }
-
         val requestStarted = CompletableDeferred<Unit>()
         val never = CompletableDeferred<Unit>()
         val engine = MockEngine { request ->
-            assertEquals("bytes=7-", request.headers[HttpHeaders.Range])
+            assertNull(request.headers[HttpHeaders.Range])
             requestStarted.complete(Unit)
             never.await()
             respond("tail", HttpStatusCode.PartialContent)
@@ -272,6 +271,7 @@ class DefaultDownloadManagerTest {
         val client = HttpClient(engine)
         val manager = testManager(client, fs)
         val id = DownloadId.new()
+        val partPath = "$finalPath.yukitoki-${id.value}.part".toPath()
 
         manager.submitInternal(
             DownloadCommand.Enqueue(
@@ -284,10 +284,9 @@ class DefaultDownloadManagerTest {
         )
 
         requestStarted.await()
-        assertIs<CommandAck.Accepted>(manager.submitInternal(DownloadCommand.Cancel(id)))
+        assertIs<CommandResult.Accepted>(manager.submitInternal(DownloadCommand.Cancel(id)))
         val result = manager.await(id)
-        assertIs<DownloadResult.Failure>(result)
-        assertIs<DownloadFailure.CancelledByUser>(result.failure)
+        assertIs<DownloadResult.Cancelled>(result)
         assertTrue(!fs.exists(partPath), "Cancelled active downloads should clean .part files by default")
         manager.shutdown()
         client.close()
@@ -300,15 +299,20 @@ class DefaultDownloadManagerTest {
         val fs = FakeFileSystem()
         val manager = testManager(client, fs)
         val id = DownloadId.new()
-        manager.submitInternal(
+        val ack = manager.submitInternal(
             DownloadCommand.Enqueue(
                 id = id,
                 request = DownloadRequest(url = "https://cdn.host/report.docx?x=1")
             )
         )
-        val result = manager.await(id)
-        assertIs<DownloadResult.Success>(result)
-        assertEquals("report.docx", result.success.finalPath.name)
+        if (DownloadLocations.isSupported) {
+            assertIs<CommandResult.Accepted>(ack)
+            val result = manager.await(id)
+            assertIs<DownloadResult.Success>(result)
+            assertEquals("report.docx", result.success.finalPath.name)
+        } else {
+            assertIs<CommandResult.Rejected>(ack)
+        }
         manager.shutdown()
         client.close()
     }
@@ -339,7 +343,7 @@ class DefaultDownloadManagerTest {
                         multiplier = 1.0,
                         jitterRatio = 0.0,
                     ),
-                    segmentation = DownloadSegmentation.SingleStream,
+                    segmentation = DownloadSegmentation.Single,
                 )
             )
         )
@@ -398,7 +402,7 @@ class DefaultDownloadManagerTest {
                         multiplier = 1.0,
                         jitterRatio = 0.0,
                     ),
-                    segmentation = DownloadSegmentation.SingleStream,
+                    segmentation = DownloadSegmentation.Single,
                 )
             )
         )
@@ -426,7 +430,7 @@ class DefaultDownloadManagerTest {
         val engine = MockEngine { respond("ok", HttpStatusCode.OK) }
         val client = HttpClient(engine)
         val manager = testManager(client, FakeFileSystem())
-        assertIs<CommandAck.Accepted>(manager.submitInternal(DownloadCommand.SetConcurrency(DownloadConcurrency.Fixed(4))))
+        assertIs<CommandResult.Accepted>(manager.submitInternal(DownloadCommand.SetConcurrency(DownloadConcurrency.Fixed(4))))
         val state = manager.state.first()
         assertEquals(4, state.maxConcurrentDownloads)
         manager.shutdown()
@@ -444,7 +448,7 @@ class DefaultDownloadManagerTest {
         val manager = testManager(client, fs)
 
         val failId = DownloadId.new()
-        manager.submitInternal(
+        val failedAck = manager.submitInternal(
             DownloadCommand.Enqueue(
                 id = failId,
                 request = DownloadRequest(
@@ -454,9 +458,7 @@ class DefaultDownloadManagerTest {
                 )
             )
         )
-        val failed = manager.await(failId)
-        assertIs<DownloadResult.Failure>(failed)
-        assertIs<DownloadFailure.AlreadyExists>(failed.failure)
+        assertIs<CommandResult.Rejected>(failedAck)
         assertEquals("old", fs.read("/tmp/existing.txt".toPath()) { readUtf8() })
 
         val renameId = DownloadId.new()
@@ -479,23 +481,49 @@ class DefaultDownloadManagerTest {
     }
 
     @Test
+    fun `default overwrite policy renames directory targets but protects exact files`() = runTest {
+        val engine = MockEngine {
+            respond("new", HttpStatusCode.OK, headersOf(HttpHeaders.ContentLength to listOf("3")))
+        }
+        val client = HttpClient(engine)
+        val fs = FakeFileSystem()
+        val directory = "/tmp".toPath()
+        val exactPath = "/tmp/report.bin".toPath()
+        fs.createDirectories(directory)
+        fs.write(exactPath) { writeUtf8("old") }
+        val manager = testManager(client, fs)
+
+        val renamed = manager.download(
+            DownloadRequest(
+                url = "https://example.com/report.bin",
+                destination = DownloadDestination.Directory(directory, "report.bin"),
+            )
+        )
+        assertIs<DownloadResult.Success>(renamed)
+        assertEquals("/tmp/report(1).bin", renamed.success.finalPath.toString())
+        assertEquals("new", fs.read(renamed.success.finalPath) { readUtf8() })
+
+        val protected = manager.download(
+            DownloadRequest(
+                url = "https://example.com/report.bin",
+                destination = DownloadDestination.File(exactPath),
+            )
+        )
+        assertIs<DownloadResult.Failure>(protected)
+        assertIs<DownloadFailure.AlreadyExists>(protected.failure)
+        assertEquals("old", fs.read(exactPath) { readUtf8() })
+
+        manager.shutdown()
+        client.close()
+    }
+
+    @Test
     fun `enqueue rejects request options that the default manager cannot enforce`() = runTest {
         val engine = MockEngine { respond("ok", HttpStatusCode.OK) }
         val client = HttpClient(engine)
         val manager = testManager(client, FakeFileSystem())
 
-        assertIs<CommandAck.Rejected>(
-            manager.submitInternal(
-                DownloadCommand.Enqueue(
-                    request = DownloadRequest(
-                        url = "https://example.com/segmented-post.bin",
-                        method = HttpMethod.Post,
-                        segmentation = DownloadSegmentation.Fixed(2),
-                    )
-                )
-            )
-        )
-        assertIs<CommandAck.Rejected>(
+        assertIs<CommandResult.Rejected>(
             manager.submitInternal(
                 DownloadCommand.Enqueue(
                     request = DownloadRequest(
@@ -526,7 +554,7 @@ class DefaultDownloadManagerTest {
                         request = DownloadRequest(
                             url = "https://f/$idx",
                             destinationPath = "/tmp/f/$idx.bin".toPath(),
-                            segmentation = DownloadSegmentation.SingleStream,
+                            segmentation = DownloadSegmentation.Single,
                         )
                     )
                 )
@@ -539,7 +567,7 @@ class DefaultDownloadManagerTest {
             manager.submitInternal(DownloadCommand.RetryAllFailed)
             manager.submitInternal(DownloadCommand.SetConcurrency(DownloadConcurrency.Fixed(2)))
             manager.submitInternal(DownloadCommand.SetConcurrency(DownloadConcurrency.Fixed(5)))
-            ids.drop(10).take(5).forEachIndexed { i, id -> manager.submitInternal(DownloadCommand.Move(id, i)) }
+            ids.drop(10).take(5).forEachIndexed { i, id -> manager.submitInternal(DownloadCommand.MoveWithinPriority(id, i)) }
 
             // Suspend until every download reaches a terminal state (see the concurrency
             // test above for why the StateFlow's `first { }` is used instead of a timed poll).
@@ -732,19 +760,19 @@ class DefaultDownloadManagerTest {
     }
 
     @Test
-    fun `range resumption appends bytes when server returns 206`() = runTest {
+    fun `stale partial without trusted task metadata is discarded`() = runTest {
         val fs = FakeFileSystem()
         val finalPath = "/tmp/resume.bin".toPath()
-        val partPath = "/tmp/resume.bin.part".toPath()
-
+        val id = DownloadId.new()
+        val partPath = "$finalPath.yukitoki-${id.value}.part".toPath()
         fs.createDirectories(partPath.parent!!)
-        fs.write(partPath) { writeUtf8("part1_") }
+        fs.write(partPath) { writeUtf8("untrusted") }
 
         val engine = MockEngine { request ->
-            assertEquals("bytes=6-", request.headers[HttpHeaders.Range])
+            assertNull(request.headers[HttpHeaders.Range])
             respond(
-                content = "part2",
-                status = HttpStatusCode.PartialContent,
+                content = "fresh",
+                status = HttpStatusCode.OK,
                 headers = headersOf(
                     HttpHeaders.ContentLength to listOf("5"),
                 ),
@@ -753,7 +781,6 @@ class DefaultDownloadManagerTest {
         val client = HttpClient(engine)
         val manager = testManager(client, fs)
 
-        val id = DownloadId.new()
         manager.submitInternal(
             DownloadCommand.Enqueue(
                 id = id,
@@ -767,7 +794,7 @@ class DefaultDownloadManagerTest {
         val result = manager.await(id)
         assertIs<DownloadResult.Success>(result)
         assertTrue(fs.exists(finalPath))
-        assertEquals("part1_part2", fs.read(finalPath) { readUtf8() })
+        assertEquals("fresh", fs.read(finalPath) { readUtf8() })
         manager.shutdown()
         client.close()
     }
@@ -815,7 +842,7 @@ class DefaultDownloadManagerTest {
                 request = DownloadRequest(
                     url = "https://example.com/segmented.bin",
                     destinationPath = "/tmp/segmented.bin".toPath(),
-                    segmentation = DownloadSegmentation.Fixed(3),
+                    segmentation = DownloadSegmentation.MaxSegments(3),
                 )
             )
         )
@@ -872,7 +899,7 @@ class DefaultDownloadManagerTest {
                 request = DownloadRequest(
                     url = "https://example.com/head-broken.bin",
                     destinationPath = "/tmp/head-broken.bin".toPath(),
-                    segmentation = DownloadSegmentation.Fixed(3),
+                    segmentation = DownloadSegmentation.MaxSegments(3),
                 )
             )
         )
@@ -941,7 +968,7 @@ class DefaultDownloadManagerTest {
                 request = DownloadRequest(
                     url = "https://example.com/rate-limited-segments.bin",
                     destinationPath = "/tmp/rate-limited-segments.bin".toPath(),
-                    segmentation = DownloadSegmentation.Fixed(4),
+                    segmentation = DownloadSegmentation.MaxSegments(4),
                 )
             )
         )
@@ -1002,7 +1029,7 @@ class DefaultDownloadManagerTest {
                 request = DownloadRequest(
                     url = "https://example.com/fallback.bin",
                     destinationPath = "/tmp/fallback.bin".toPath(),
-                    segmentation = DownloadSegmentation.Fixed(4),
+                    segmentation = DownloadSegmentation.MaxSegments(4),
                 )
             )
         )
@@ -1056,7 +1083,7 @@ class DefaultDownloadManagerTest {
                 request = DownloadRequest(
                     url = "https://example.com/bad-segment.bin",
                     destinationPath = "/tmp/bad-segment.bin".toPath(),
-                    segmentation = DownloadSegmentation.Fixed(2),
+                    segmentation = DownloadSegmentation.MaxSegments(2),
                 )
             )
         )
@@ -1071,17 +1098,14 @@ class DefaultDownloadManagerTest {
     }
 
     @Test
-    fun `pause active download preserves resumable partial file`() = runTest {
+    fun `pause before a response body arrives reaches paused state`() = runTest {
         val fs = FakeFileSystem()
         val finalPath = "/tmp/pause.bin".toPath()
-        val partPath = "/tmp/pause.bin.part".toPath()
-        fs.createDirectories(partPath.parent!!)
-        fs.write(partPath) { writeUtf8("partial") }
 
         val requestStarted = CompletableDeferred<Unit>()
         val never = CompletableDeferred<Unit>()
         val engine = MockEngine { request ->
-            assertEquals("bytes=7-", request.headers[HttpHeaders.Range])
+            assertNull(request.headers[HttpHeaders.Range])
             requestStarted.complete(Unit)
             never.await()
             respond("tail", HttpStatusCode.PartialContent)
@@ -1089,6 +1113,7 @@ class DefaultDownloadManagerTest {
         val client = HttpClient(engine)
         val manager = testManager(client, fs)
         val id = DownloadId.new()
+        val partPath = "$finalPath.yukitoki-${id.value}.part".toPath()
 
         manager.submitInternal(
             DownloadCommand.Enqueue(
@@ -1101,62 +1126,13 @@ class DefaultDownloadManagerTest {
         )
 
         requestStarted.await()
-        assertIs<CommandAck.Accepted>(manager.submitInternal(DownloadCommand.Pause(id)))
+        assertIs<CommandResult.Accepted>(manager.submitInternal(DownloadCommand.Pause(id)))
         withTimeout(5_000) {
             while (manager.state.value.snapshots[id]?.state !is DownloadState.Paused) {
                 delay(10)
             }
         }
-        assertTrue(fs.exists(partPath), "Paused downloads should keep .part files for resume")
-        manager.shutdown()
-        client.close()
-    }
-
-    @Test
-    fun `pause active download then resume completes from partial`() = runTest {
-        val fs = FakeFileSystem()
-        val finalPath = "/tmp/pr.bin".toPath()
-        val partPath = "/tmp/pr.bin.part".toPath()
-        fs.createDirectories(partPath.parent!!)
-        fs.write(partPath) { writeUtf8("part1_") }
-
-        var call = 0
-        val firstStarted = CompletableDeferred<Unit>()
-        val engine = MockEngine { request ->
-            assertEquals("bytes=6-", request.headers[HttpHeaders.Range])
-            call++
-            if (call == 1) {
-                firstStarted.complete(Unit)
-                awaitCancellation()
-            } else {
-                respond(
-                    content = "part2",
-                    status = HttpStatusCode.PartialContent,
-                    headers = headersOf(HttpHeaders.ContentLength to listOf("5")),
-                )
-            }
-        }
-        val client = HttpClient(engine)
-        val manager = testManager(client, fs)
-        val id = DownloadId.new()
-
-        manager.submitInternal(
-            DownloadCommand.Enqueue(
-                id = id,
-                request = DownloadRequest(url = "https://example.com/pr.bin", destinationPath = finalPath)
-            )
-        )
-
-        firstStarted.await()
-        assertIs<CommandAck.Accepted>(manager.submitInternal(DownloadCommand.Pause(id)))
-        withTimeout(5_000) {
-            while (manager.state.value.snapshots[id]?.state !is DownloadState.Paused) delay(10)
-        }
-        assertIs<CommandAck.Accepted>(manager.submitInternal(DownloadCommand.Resume(id)))
-
-        val result = manager.await(id)
-        assertIs<DownloadResult.Success>(result)
-        assertEquals("part1_part2", fs.read(finalPath) { readUtf8() })
+        assertTrue(!fs.exists(partPath), "No partial is created before the response body arrives")
         manager.shutdown()
         client.close()
     }
@@ -1198,13 +1174,14 @@ class DefaultDownloadManagerTest {
     fun `range resumption resets and redownloads when server returns 200`() = runTest {
         val fs = FakeFileSystem()
         val finalPath = "/tmp/change.bin".toPath()
-        val partPath = "/tmp/change.bin.part".toPath()
+        val id = DownloadId.new()
+        val partPath = "$finalPath.yukitoki-${id.value}.part".toPath()
 
         fs.createDirectories(partPath.parent!!)
         fs.write(partPath) { writeUtf8("part1_") }
 
         val engine = MockEngine { request ->
-            assertEquals("bytes=6-", request.headers[HttpHeaders.Range])
+            assertNull(request.headers[HttpHeaders.Range])
             respond(
                 content = "new_file_from_start",
                 status = HttpStatusCode.OK,
@@ -1216,7 +1193,6 @@ class DefaultDownloadManagerTest {
         val client = HttpClient(engine)
         val manager = testManager(client, fs)
 
-        val id = DownloadId.new()
         manager.submitInternal(
             DownloadCommand.Enqueue(
                 id = id,
@@ -1261,7 +1237,7 @@ class DefaultDownloadManagerTest {
 
         // Pending starts as [high, n1, n2]. Move n1 to index 1 within the NORMAL tier.
         assertEquals(listOf(high, n1, n2), manager.state.value.pending)
-        assertIs<CommandAck.Accepted>(manager.submitInternal(DownloadCommand.Move(n1, 1)))
+        assertIs<CommandResult.Accepted>(manager.submitInternal(DownloadCommand.MoveWithinPriority(n1, 1)))
 
         // HIGH still leads (priority preserved); only the NORMAL tier reordered.
         assertEquals(listOf(high, n2, n1), manager.state.value.pending)
@@ -1303,13 +1279,16 @@ class DefaultDownloadManagerTest {
         val client = HttpClient(engine)
         val manager = testManager(client, FakeFileSystem())
 
-        val ok = manager.download(url = "https://example.com/dn.bin", destinationPath = "/tmp/dn.bin".toPath())
+        val ok = manager.download(
+            url = "https://example.com/dn.bin",
+            destination = DownloadDestination.File("/tmp/dn.bin".toPath()),
+        )
         assertIs<DownloadResult.Success>(ok)
 
-        val rejected = manager.download(
+        val rejected = manager.download(DownloadRequest(
             url = "https://example.com/dn2.bin",
             headers = headersOf(HttpHeaders.Range to listOf("bytes=0-10")),
-        )
+        ))
         assertIs<DownloadResult.Failure>(rejected)
         manager.shutdown()
         client.close()
@@ -1346,7 +1325,7 @@ class DefaultDownloadManagerTest {
         val client = HttpClient(engine)
         val manager = testManager(client, FakeFileSystem())
         manager.shutdown()
-        assertIs<CommandAck.Rejected>(manager.submitInternal(DownloadCommand.SetConcurrency(DownloadConcurrency.Fixed(2))))
+        assertIs<CommandResult.Rejected>(manager.submitInternal(DownloadCommand.SetConcurrency(DownloadConcurrency.Fixed(2))))
         assertNull(manager.await(DownloadId.new()))
         client.close()
     }
@@ -1358,11 +1337,14 @@ class DefaultDownloadManagerTest {
         }
         val client = HttpClient(engine)
         val manager = testManager(client, FakeFileSystem())
-        val id = manager.enqueue(url = "https://example.com/hanging.bin", destinationPath = "/tmp/hanging.bin".toPath())
+        val task = manager.enqueue(
+            url = "https://example.com/hanging.bin",
+            destination = DownloadDestination.File("/tmp/hanging.bin".toPath()),
+        )
 
-        val waiter = async { manager.await(id) }
+        val waiter = async { manager.await(task.id) }
         runCurrent()
-        manager.cancel()
+        manager.close()
 
         assertNull(withTimeout(1_000) { waiter.await() })
         client.close()
@@ -1433,7 +1415,7 @@ class DefaultDownloadManagerTest {
                     multiplier = 1.0,
                     jitterRatio = 0.0,
                 ),
-                segmentation = DownloadSegmentation.SingleStream,
+                segmentation = DownloadSegmentation.Single,
             )
         )
 
@@ -1445,7 +1427,7 @@ class DefaultDownloadManagerTest {
     @Test
     fun `request validation rejects impossible segment and progress values`() {
         assertFailsWith<IllegalArgumentException> {
-            DownloadRequest(url = "https://example.com/file", segmentation = DownloadSegmentation.Fixed(0))
+            DownloadRequest(url = "https://example.com/file", segmentation = DownloadSegmentation.MaxSegments(0))
         }
         assertFailsWith<IllegalArgumentException> {
             ProgressGranularity(minBytesDelta = -1)
@@ -1461,10 +1443,96 @@ class DefaultDownloadManagerTest {
             DownloadRequest(url = "not-a-url")
         }
         assertFailsWith<IllegalArgumentException> {
-            DownloadRequest(url = "https://example.com/file.bin", fileName = "../file.bin")
+            DownloadRequest(
+                url = "https://example.com/file.bin",
+                destination = DownloadDestination.Directory("/tmp".toPath(), "../file.bin"),
+            )
         }
         assertFailsWith<IllegalArgumentException> {
             ChecksumSpec(ChecksumAlgorithm.SHA_256, "not-hex")
         }
+    }
+
+    @Test
+    fun `two active requests cannot reserve the same exact destination`() = runTest {
+        val started = CompletableDeferred<Unit>()
+        val never = CompletableDeferred<Unit>()
+        val engine = MockEngine {
+            started.complete(Unit)
+            never.await()
+            respond("unused", HttpStatusCode.OK)
+        }
+        val client = HttpClient(engine)
+        val manager = testManager(
+            client,
+            FakeFileSystem(),
+            DownloadManagerConfig(concurrency = DownloadConcurrency.Fixed(1)),
+        )
+        val path = "/tmp/reserved.bin".toPath()
+        val firstId = DownloadId.new()
+        val secondId = DownloadId.new()
+
+        assertIs<CommandResult.Accepted>(manager.submitInternal(DownloadCommand.Enqueue(
+            DownloadRequest("https://example.com/first", path, overwritePolicy = OverwritePolicy.REPLACE),
+            firstId,
+        )))
+        started.await()
+        val collision = manager.submitInternal(DownloadCommand.Enqueue(
+            DownloadRequest("https://example.com/second", path, overwritePolicy = OverwritePolicy.REPLACE),
+            secondId,
+        ))
+        assertIs<CommandResult.Rejected>(collision)
+        assertIs<DownloadFailure.AlreadyExists>(collision.failure)
+
+        manager.cancel(firstId)
+        assertIs<DownloadResult.Cancelled>(manager.await(firstId))
+        manager.shutdown()
+        client.close()
+    }
+
+    @Test
+    fun `finished snapshot retention is bounded`() = runTest {
+        val client = HttpClient(MockEngine { respond("ok", HttpStatusCode.OK) })
+        val manager = testManager(
+            client,
+            FakeFileSystem(),
+            DownloadManagerConfig(maxRetainedFinished = 1),
+        )
+        val first = manager.enqueue(
+            "https://example.com/first.bin",
+            DownloadDestination.File("/tmp/first.bin".toPath()),
+        )
+        assertIs<DownloadResult.Success>(first.await())
+        val second = manager.enqueue(
+            "https://example.com/second.bin",
+            DownloadDestination.File("/tmp/second.bin".toPath()),
+        )
+        assertIs<DownloadResult.Success>(second.await())
+
+        assertNull(manager.state.value.snapshots[first.id])
+        assertIs<DownloadState.Succeeded>(manager.state.value.snapshots[second.id]?.state)
+        manager.shutdown()
+        client.close()
+    }
+
+    @Test
+    fun `task handle observes completion and remove can delete the final file`() = runTest {
+        val client = HttpClient(MockEngine { respond("ok", HttpStatusCode.OK) })
+        val fs = FakeFileSystem()
+        val manager = testManager(client, fs)
+        val path = "/tmp/task.bin".toPath()
+
+        val task = manager.enqueue(
+            "https://example.com/task.bin",
+            DownloadDestination.File(path),
+        )
+        assertIs<DownloadResult.Success>(task.await())
+        assertIs<DownloadState.Succeeded>(task.state.first()?.state)
+        assertTrue(fs.exists(path))
+        assertIs<CommandResult.Accepted>(manager.remove(task.id, deleteFile = true))
+        assertTrue(!fs.exists(path))
+        assertNull(manager.state.value.snapshots[task.id])
+        manager.shutdown()
+        client.close()
     }
 }

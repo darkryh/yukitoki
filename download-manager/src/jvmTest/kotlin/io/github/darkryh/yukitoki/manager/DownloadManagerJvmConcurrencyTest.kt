@@ -22,6 +22,7 @@ import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertIs
 import kotlin.test.assertTrue
+import kotlin.time.Duration.Companion.milliseconds
 
 /**
  * Real-thread tests. Unlike the virtual-time common suite, these run workers on a true
@@ -92,9 +93,9 @@ class DownloadManagerJvmConcurrencyTest {
                                 url = "https://example.com/r$round-$i.bin",
                                 destinationPath = path("r$round-$i.bin"),
                                 segmentation = if (i % 2 == 0) {
-                                    DownloadSegmentation.Fixed(4)
+                                    DownloadSegmentation.MaxSegments(4)
                                 } else {
-                                    DownloadSegmentation.SingleStream
+                                    DownloadSegmentation.Single
                                 },
                             ),
                         )
@@ -144,7 +145,7 @@ class DownloadManagerJvmConcurrencyTest {
                 httpClient = client,
                 scope = scope,
                 fileSystem = fs,
-                config = DownloadManagerConfig(idleTimeoutMs = 300),
+                config = DownloadManagerConfig(idleTimeout = 300.milliseconds),
             )
             val id = DownloadId.new()
             manager.submitInternal(

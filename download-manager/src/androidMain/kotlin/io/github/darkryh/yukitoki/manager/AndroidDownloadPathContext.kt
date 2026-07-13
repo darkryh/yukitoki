@@ -2,7 +2,7 @@ package io.github.darkryh.yukitoki.manager
 
 import android.content.Context
 
-object AndroidDownloadPathContext {
+internal object AndroidDownloadPathContext {
     @Volatile
     private var appContext: Context? = null
 

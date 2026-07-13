@@ -1,123 +1,96 @@
 # Yukitoki
 
-A generic **Kotlin Multiplatform download manager** for streaming file downloads with progress,
-a parallel queue, pause/resume, retries, segmented range downloads, checksums, and file safety.
+Yukitoki is an in-process Kotlin Multiplatform download manager for Android, JVM desktop, and iOS. It provides streaming downloads, observable tasks, pause/resume, retry, priorities, bounded concurrency, segmented ranges, checksums, and safe file finalization.
 
-Built for coroutines — it drops straight into a `ViewModel` and Compose / Compose Multiplatform.
+The browser target exposes download intents because browsers do not expose an ordinary writable Downloads filesystem.
 
-**Current version:** `1.0.0-beta02` · [changelog](CHANGELOG.md)
-
-**Targets:** JVM · Android · iOS (arm64 + simulator arm64) · wasmJs (browser)
-
----
-
-## Why Yukitoki
-
-- **One API, every target.** Write the download logic once in `commonMain`; only the Ktor engine
-  and the default downloads directory differ per platform.
-- **Safe to drive from the UI thread.** An actor-based coordinator owns all queue state, and every
-  blocking file read/write is offloaded to an I/O dispatcher — so `viewModelScope` (Main) never blocks.
-- **Resilient by default.** Retries with exponential backoff + jitter, HTTP resume (`Range` / `If-Range`),
-  a stall/idle timeout, and rate-limit (`429`) backpressure are built in.
-- **Fast when it's safe.** Large files use segmented parallel range workers — but only when the server
-  proves it supports byte ranges. Everything else falls back to a validated single stream.
-- **Correct files or none.** Downloads stream into a `.part` temp file and are atomically moved into
-  place only after size and optional MD5 / SHA-256 checks pass.
+Current development version: `1.0.0-SNAPSHOT`.
 
 ## Install
 
-Yukitoki is published to Maven Central.
+The last published preview is:
 
 ```kotlin
-// settings.gradle.kts
-dependencyResolutionManagement {
-    repositories {
-        mavenCentral()
-        google() // for the Android target
-    }
-}
+implementation("io.github.darkryh.yukitoki:download-manager:1.0.0-beta02")
 ```
 
-```kotlin
-// build.gradle.kts — in your KMP module's commonMain (or a JVM/Android module)
-dependencies {
-    implementation("io.github.darkryh.yukitoki:download-manager:1.0.0-beta02")
-}
-```
+The pre-1.0 API documented below is currently available from this repository. The artifact bundles an appropriate Ktor engine for Android, JVM, and iOS.
 
-You also provide a **Ktor `HttpClient`** with an engine for each target — Yukitoki does not pick one for you:
-
-| Target  | Suggested engine        | Artifact                          |
-|---------|-------------------------|-----------------------------------|
-| Android | OkHttp (or CIO)         | `io.ktor:ktor-client-okhttp`      |
-| JVM     | CIO (or OkHttp)         | `io.ktor:ktor-client-cio`         |
-| iOS     | Darwin                  | `io.ktor:ktor-client-darwin`      |
-| wasmJs  | Js                      | `io.ktor:ktor-client-js`          |
-
-`ktor-client-core`, `kotlinx-coroutines-core`, and `okio` come transitively as `api` dependencies.
-
-## 30-second example
+## Basic use
 
 ```kotlin
-val manager = DefaultDownloadManager(
-    httpClient = httpClient, // you own and configure it
-    scope = appScope,        // you own the lifecycle
-)
+val manager = DownloadManager.create()
 
-// Fire-and-await a single download:
-val result = manager.download("https://example.com/report.pdf")
-when (result) {
+val task = manager.enqueue("https://example.com/report.pdf")
+task.state.collect { snapshot -> println(snapshot?.state) }
+
+when (val result = task.await()) {
     is DownloadResult.Success -> println("Saved to ${result.success.finalPath}")
     is DownloadResult.Failure -> println("Failed: ${result.failure}")
+    DownloadResult.Cancelled -> println("Cancelled")
 }
 
-// Or enqueue onto the parallel queue and observe progress:
-val id = manager.enqueue("https://example.com/video.mp4")
-manager.observe(id).collect { snapshot -> render(snapshot?.state) }
+manager.close()
 ```
 
-If you omit the destination path, the file lands in the platform's default Downloads directory
-(Android needs [one line of setup](docs/how-to/set-up-android.md)).
+No platform `expect`/`actual`, Ktor engine, coroutine scope, Android initialization, or explicit path is required for the default case.
+
+## Destinations
+
+```kotlin
+val defaultDirectory = DownloadLocations.downloads
+
+manager.enqueue(
+    DownloadRequest(
+        url = "https://example.com/model.bin",
+        destination = DownloadDestination.Directory(
+            path = DownloadLocations.downloads / "models",
+        ),
+    )
+)
+```
+
+`DownloadLocations.downloads` is writable and platform appropriate, but can be app-sandboxed. On Android it is app-specific storage; writing to the shared public Downloads collection requires an Android MediaStore/URI workflow.
+
+## Advanced networking
+
+Inject a caller-owned client and scope when engine-specific configuration is required:
+
+```kotlin
+val manager = DownloadManager.create(
+    httpClient = myHttpClient,
+    scope = applicationScope,
+)
+```
+
+Injected resources remain caller-owned. A manager created with the no-argument factory owns and closes its client and scope.
+
+## Platform scope
+
+- Android: automatic application-context initialization and bundled OkHttp engine.
+- JVM desktop: bundled CIO engine and Linux XDG Downloads-directory support.
+- iOS device and Intel/Apple Silicon simulators: bundled Darwin engine and sandboxed `Documents/Downloads`.
+- Wasm browser: `DownloadIntents`; managed filesystem downloads are unsupported.
+
+Yukitoki does not currently persist its queue across process death or reboot and does not start an Android foreground/background service. Schedule it through platform background infrastructure when that behavior is required.
+
+The API is Kotlin-first. The iOS artifact is intended for shared Kotlin/Compose code; a separate Swift-native façade is not part of the 1.0 contract.
 
 ## Documentation
 
-| I want to…                                   | Read                                                                 |
-|----------------------------------------------|----------------------------------------------------------------------|
-| Get my first download working, step by step  | [Getting started](docs/getting-started.md) — *tutorial*              |
-| Solve a specific task                         | [How-to guides](docs/how-to/) — *recipes*                            |
-| Look up a type, function, or parameter        | [API reference](docs/reference/api.md) — *facts*                     |
-| Understand how it works and why               | [Architecture](docs/explanation/architecture.md) — *explanation*     |
+- [Getting started](docs/getting-started.md)
+- [API reference](docs/reference/api.md)
+- [Architecture](docs/explanation/architecture.md)
+- [How-to guides](docs/README.md)
+- [Sample app](sample/README.md)
 
-**Popular how-to guides**
+## Validation
 
-- [Download inside a ViewModel + Compose](docs/how-to/download-in-a-viewmodel.md)
-- [Control the queue: pause, resume, cancel, retry, reorder](docs/how-to/control-the-queue.md)
-- [Verify file integrity with checksums](docs/how-to/verify-file-integrity.md)
-- [Tune concurrency and segmentation](docs/how-to/tune-concurrency-and-segmentation.md)
-- [Handle failures and retries](docs/how-to/handle-failures-and-retries.md)
-- [Set up Android](docs/how-to/set-up-android.md)
-- [Download on wasm / in the browser](docs/how-to/download-on-wasm.md)
-
-## Sample app
-
-A single shared Compose UI drives the manager on Android, iOS, and desktop. See
-[`sample/`](sample/README.md) — paste a URL, watch live progress, adjust concurrency, and
-pause / resume / cancel / retry each item.
+The project uses Kotlin explicit API mode and built-in ABI validation. Run:
 
 ```bash
-./gradlew :sample:composeApp:run          # desktop
-./gradlew :sample:composeApp:installDebug # Android
+./gradlew :download-manager:allTests :download-manager:build :download-manager:checkKotlinAbi
 ```
-
-## Compatibility
-
-| Component            | Version        |
-|----------------------|----------------|
-| Kotlin               | 2.4.0          |
-| Ktor client          | 3.5.x          |
-| Okio                 | 3.17.x         |
-| kotlinx-coroutines   | 1.11.x         |
-| Android `minSdk`     | 26             |
 
 ## License
 

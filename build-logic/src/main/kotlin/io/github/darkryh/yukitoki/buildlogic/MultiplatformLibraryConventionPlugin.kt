@@ -14,7 +14,7 @@ class MultiplatformLibraryConventionPlugin : Plugin<Project> {
                 ?: "io.github.darkryh.yukitoki"
             version = findProperty("yukitokiVersion") as? String
                 ?: rootProject.version.toString().takeUnless { it == "unspecified" }
-                ?: "1.0.0"
+                ?: "1.0.0-SNAPSHOT"
 
             pluginManager.apply("org.jetbrains.kotlin.multiplatform")
             pluginManager.apply("com.android.kotlin.multiplatform.library")

@@ -84,7 +84,7 @@ interoperates with any correct HTTP server without special server support.
 
 Resume is designed around the single-stream path. Segmented downloads keep their in-flight slices as
 internal temp files that are cleaned up on pause — which is why the docs recommend
-`DownloadSegmentation.SingleStream` when reliable pause/resume matters more than raw speed for a
+`DownloadSegmentation.Single` when reliable pause/resume matters more than raw speed for a
 particular file.
 
 ## Segmentation: prove-then-parallelize
@@ -101,7 +101,7 @@ inconsistently. Yukitoki treats parallelism as something the server must **earn*
    before its bytes are merged into the single `.part` file.
 
 If any of that fails to prove out, the download quietly uses the validated single-stream path instead.
-This is why `DownloadSegmentation.Fixed(n)` is documented as a **maximum**, not a demand: the manager
+This is why `DownloadSegmentation.MaxSegments(n)` is documented as a **maximum**, not a demand: the manager
 will use up to `n` segments, but fewer — or one — if the server or current conditions call for it.
 Segmentation is also GET-only, because ranged parallelism of a non-idempotent method isn't safe.
 
@@ -118,7 +118,7 @@ Two mechanisms keep Yukitoki polite and resilient on imperfect networks:
   with random jitter to avoid thundering-herd retries. Non-transient failures (404, checksum mismatch,
   permission denied, no space) fail fast, because a retry would produce the same result.
 
-The idle/stall timeout (`idleTimeoutMs`) is a separate safety net for a specific failure the HTTP
+The idle/stall timeout (`idleTimeout`) is a separate safety net for a specific failure the HTTP
 client's own timeouts miss: a socket that connects and then goes silent forever. It fails the attempt
 if no bytes arrive for the configured window.
 

@@ -69,8 +69,8 @@ enum class DownloadCategory(val label: String) {
 }
 
 @Composable
-fun App(environment: DownloadEnvironment) {
-    val viewModel = remember(environment) { DownloadViewModel(environment) }
+fun App() {
+    val viewModel = remember { DownloadViewModel() }
     DisposableEffect(viewModel) { onDispose { viewModel.close() } }
 
     val state by viewModel.state.collectAsState()

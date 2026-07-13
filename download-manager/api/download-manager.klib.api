@@ -1,0 +1,839 @@
+// Klib ABI Dump
+// Targets: [iosArm64, iosSimulatorArm64, iosX64, wasmJs]
+// Rendering settings:
+// - Signature version: 2
+// - Show manifest properties: true
+// - Show declarations: true
+
+// Library unique name: <io.github.darkryh.yukitoki:download-manager>
+final enum class io.github.darkryh.yukitoki.manager/ChecksumAlgorithm : kotlin/Enum<io.github.darkryh.yukitoki.manager/ChecksumAlgorithm> { // io.github.darkryh.yukitoki.manager/ChecksumAlgorithm|null[0]
+    enum entry MD5 // io.github.darkryh.yukitoki.manager/ChecksumAlgorithm.MD5|null[0]
+    enum entry SHA_256 // io.github.darkryh.yukitoki.manager/ChecksumAlgorithm.SHA_256|null[0]
+
+    final val entries // io.github.darkryh.yukitoki.manager/ChecksumAlgorithm.entries|#static{}entries[0]
+        final fun <get-entries>(): kotlin.enums/EnumEntries<io.github.darkryh.yukitoki.manager/ChecksumAlgorithm> // io.github.darkryh.yukitoki.manager/ChecksumAlgorithm.entries.<get-entries>|<get-entries>#static(){}[0]
+
+    final fun valueOf(kotlin/String): io.github.darkryh.yukitoki.manager/ChecksumAlgorithm // io.github.darkryh.yukitoki.manager/ChecksumAlgorithm.valueOf|valueOf#static(kotlin.String){}[0]
+    final fun values(): kotlin/Array<io.github.darkryh.yukitoki.manager/ChecksumAlgorithm> // io.github.darkryh.yukitoki.manager/ChecksumAlgorithm.values|values#static(){}[0]
+}
+
+final enum class io.github.darkryh.yukitoki.manager/DownloadPriority : kotlin/Enum<io.github.darkryh.yukitoki.manager/DownloadPriority> { // io.github.darkryh.yukitoki.manager/DownloadPriority|null[0]
+    enum entry HIGH // io.github.darkryh.yukitoki.manager/DownloadPriority.HIGH|null[0]
+    enum entry LOW // io.github.darkryh.yukitoki.manager/DownloadPriority.LOW|null[0]
+    enum entry NORMAL // io.github.darkryh.yukitoki.manager/DownloadPriority.NORMAL|null[0]
+
+    final val entries // io.github.darkryh.yukitoki.manager/DownloadPriority.entries|#static{}entries[0]
+        final fun <get-entries>(): kotlin.enums/EnumEntries<io.github.darkryh.yukitoki.manager/DownloadPriority> // io.github.darkryh.yukitoki.manager/DownloadPriority.entries.<get-entries>|<get-entries>#static(){}[0]
+
+    final fun valueOf(kotlin/String): io.github.darkryh.yukitoki.manager/DownloadPriority // io.github.darkryh.yukitoki.manager/DownloadPriority.valueOf|valueOf#static(kotlin.String){}[0]
+    final fun values(): kotlin/Array<io.github.darkryh.yukitoki.manager/DownloadPriority> // io.github.darkryh.yukitoki.manager/DownloadPriority.values|values#static(){}[0]
+}
+
+final enum class io.github.darkryh.yukitoki.manager/OverwritePolicy : kotlin/Enum<io.github.darkryh.yukitoki.manager/OverwritePolicy> { // io.github.darkryh.yukitoki.manager/OverwritePolicy|null[0]
+    enum entry DEFAULT // io.github.darkryh.yukitoki.manager/OverwritePolicy.DEFAULT|null[0]
+    enum entry FAIL_IF_EXISTS // io.github.darkryh.yukitoki.manager/OverwritePolicy.FAIL_IF_EXISTS|null[0]
+    enum entry RENAME_UNIQUE // io.github.darkryh.yukitoki.manager/OverwritePolicy.RENAME_UNIQUE|null[0]
+    enum entry REPLACE // io.github.darkryh.yukitoki.manager/OverwritePolicy.REPLACE|null[0]
+
+    final val entries // io.github.darkryh.yukitoki.manager/OverwritePolicy.entries|#static{}entries[0]
+        final fun <get-entries>(): kotlin.enums/EnumEntries<io.github.darkryh.yukitoki.manager/OverwritePolicy> // io.github.darkryh.yukitoki.manager/OverwritePolicy.entries.<get-entries>|<get-entries>#static(){}[0]
+
+    final fun valueOf(kotlin/String): io.github.darkryh.yukitoki.manager/OverwritePolicy // io.github.darkryh.yukitoki.manager/OverwritePolicy.valueOf|valueOf#static(kotlin.String){}[0]
+    final fun values(): kotlin/Array<io.github.darkryh.yukitoki.manager/OverwritePolicy> // io.github.darkryh.yukitoki.manager/OverwritePolicy.values|values#static(){}[0]
+}
+
+abstract interface io.github.darkryh.yukitoki.manager/DownloadManager : kotlin/AutoCloseable { // io.github.darkryh.yukitoki.manager/DownloadManager|null[0]
+    abstract val state // io.github.darkryh.yukitoki.manager/DownloadManager.state|{}state[0]
+        abstract fun <get-state>(): kotlinx.coroutines.flow/StateFlow<io.github.darkryh.yukitoki.manager/DownloadManagerState> // io.github.darkryh.yukitoki.manager/DownloadManager.state.<get-state>|<get-state>(){}[0]
+
+    abstract fun close() // io.github.darkryh.yukitoki.manager/DownloadManager.close|close(){}[0]
+    abstract fun observe(io.github.darkryh.yukitoki.manager/DownloadId): kotlinx.coroutines.flow/Flow<io.github.darkryh.yukitoki.manager/DownloadSnapshot?> // io.github.darkryh.yukitoki.manager/DownloadManager.observe|observe(io.github.darkryh.yukitoki.manager.DownloadId){}[0]
+    abstract suspend fun await(io.github.darkryh.yukitoki.manager/DownloadId): io.github.darkryh.yukitoki.manager/DownloadResult? // io.github.darkryh.yukitoki.manager/DownloadManager.await|await(io.github.darkryh.yukitoki.manager.DownloadId){}[0]
+    abstract suspend fun cancel(io.github.darkryh.yukitoki.manager/DownloadId): io.github.darkryh.yukitoki.manager/CommandResult // io.github.darkryh.yukitoki.manager/DownloadManager.cancel|cancel(io.github.darkryh.yukitoki.manager.DownloadId){}[0]
+    abstract suspend fun cancelAll(): io.github.darkryh.yukitoki.manager/CommandResult // io.github.darkryh.yukitoki.manager/DownloadManager.cancelAll|cancelAll(){}[0]
+    abstract suspend fun clearFinished(): io.github.darkryh.yukitoki.manager/CommandResult // io.github.darkryh.yukitoki.manager/DownloadManager.clearFinished|clearFinished(){}[0]
+    abstract suspend fun download(io.github.darkryh.yukitoki.manager/DownloadRequest): io.github.darkryh.yukitoki.manager/DownloadResult // io.github.darkryh.yukitoki.manager/DownloadManager.download|download(io.github.darkryh.yukitoki.manager.DownloadRequest){}[0]
+    abstract suspend fun enqueue(io.github.darkryh.yukitoki.manager/DownloadRequest, io.github.darkryh.yukitoki.manager/DownloadId = ...): io.github.darkryh.yukitoki.manager/DownloadTask // io.github.darkryh.yukitoki.manager/DownloadManager.enqueue|enqueue(io.github.darkryh.yukitoki.manager.DownloadRequest;io.github.darkryh.yukitoki.manager.DownloadId){}[0]
+    abstract suspend fun moveWithinPriority(io.github.darkryh.yukitoki.manager/DownloadId, kotlin/Int): io.github.darkryh.yukitoki.manager/CommandResult // io.github.darkryh.yukitoki.manager/DownloadManager.moveWithinPriority|moveWithinPriority(io.github.darkryh.yukitoki.manager.DownloadId;kotlin.Int){}[0]
+    abstract suspend fun pause(io.github.darkryh.yukitoki.manager/DownloadId): io.github.darkryh.yukitoki.manager/CommandResult // io.github.darkryh.yukitoki.manager/DownloadManager.pause|pause(io.github.darkryh.yukitoki.manager.DownloadId){}[0]
+    abstract suspend fun pauseAll(): io.github.darkryh.yukitoki.manager/CommandResult // io.github.darkryh.yukitoki.manager/DownloadManager.pauseAll|pauseAll(){}[0]
+    abstract suspend fun remove(io.github.darkryh.yukitoki.manager/DownloadId, kotlin/Boolean = ...): io.github.darkryh.yukitoki.manager/CommandResult // io.github.darkryh.yukitoki.manager/DownloadManager.remove|remove(io.github.darkryh.yukitoki.manager.DownloadId;kotlin.Boolean){}[0]
+    abstract suspend fun resume(io.github.darkryh.yukitoki.manager/DownloadId): io.github.darkryh.yukitoki.manager/CommandResult // io.github.darkryh.yukitoki.manager/DownloadManager.resume|resume(io.github.darkryh.yukitoki.manager.DownloadId){}[0]
+    abstract suspend fun resumeAll(): io.github.darkryh.yukitoki.manager/CommandResult // io.github.darkryh.yukitoki.manager/DownloadManager.resumeAll|resumeAll(){}[0]
+    abstract suspend fun retry(io.github.darkryh.yukitoki.manager/DownloadId): io.github.darkryh.yukitoki.manager/CommandResult // io.github.darkryh.yukitoki.manager/DownloadManager.retry|retry(io.github.darkryh.yukitoki.manager.DownloadId){}[0]
+    abstract suspend fun retryAllFailed(): io.github.darkryh.yukitoki.manager/CommandResult // io.github.darkryh.yukitoki.manager/DownloadManager.retryAllFailed|retryAllFailed(){}[0]
+    abstract suspend fun setConcurrency(io.github.darkryh.yukitoki.manager/DownloadConcurrency): io.github.darkryh.yukitoki.manager/CommandResult // io.github.darkryh.yukitoki.manager/DownloadManager.setConcurrency|setConcurrency(io.github.darkryh.yukitoki.manager.DownloadConcurrency){}[0]
+    abstract suspend fun shutdown(kotlin/Boolean = ...) // io.github.darkryh.yukitoki.manager/DownloadManager.shutdown|shutdown(kotlin.Boolean){}[0]
+    open suspend fun download(kotlin/String, io.github.darkryh.yukitoki.manager/DownloadDestination = ...): io.github.darkryh.yukitoki.manager/DownloadResult // io.github.darkryh.yukitoki.manager/DownloadManager.download|download(kotlin.String;io.github.darkryh.yukitoki.manager.DownloadDestination){}[0]
+    open suspend fun enqueue(kotlin/String, io.github.darkryh.yukitoki.manager/DownloadDestination = ..., io.github.darkryh.yukitoki.manager/DownloadPriority = ...): io.github.darkryh.yukitoki.manager/DownloadTask // io.github.darkryh.yukitoki.manager/DownloadManager.enqueue|enqueue(kotlin.String;io.github.darkryh.yukitoki.manager.DownloadDestination;io.github.darkryh.yukitoki.manager.DownloadPriority){}[0]
+
+    final object Companion { // io.github.darkryh.yukitoki.manager/DownloadManager.Companion|null[0]
+        final fun create(io.github.darkryh.yukitoki.manager/DownloadManagerConfig = ..., kotlin/Function1<io.ktor.client/HttpClientConfig<*>, kotlin/Unit> = ...): io.github.darkryh.yukitoki.manager/DownloadManager // io.github.darkryh.yukitoki.manager/DownloadManager.Companion.create|create(io.github.darkryh.yukitoki.manager.DownloadManagerConfig;kotlin.Function1<io.ktor.client.HttpClientConfig<*>,kotlin.Unit>){}[0]
+        final fun create(io.ktor.client/HttpClient, kotlinx.coroutines/CoroutineScope, io.github.darkryh.yukitoki.manager/DownloadManagerConfig = ...): io.github.darkryh.yukitoki.manager/DownloadManager // io.github.darkryh.yukitoki.manager/DownloadManager.Companion.create|create(io.ktor.client.HttpClient;kotlinx.coroutines.CoroutineScope;io.github.darkryh.yukitoki.manager.DownloadManagerConfig){}[0]
+    }
+}
+
+abstract interface io.github.darkryh.yukitoki.manager/DownloadTask { // io.github.darkryh.yukitoki.manager/DownloadTask|null[0]
+    abstract val id // io.github.darkryh.yukitoki.manager/DownloadTask.id|{}id[0]
+        abstract fun <get-id>(): io.github.darkryh.yukitoki.manager/DownloadId // io.github.darkryh.yukitoki.manager/DownloadTask.id.<get-id>|<get-id>(){}[0]
+    abstract val state // io.github.darkryh.yukitoki.manager/DownloadTask.state|{}state[0]
+        abstract fun <get-state>(): kotlinx.coroutines.flow/Flow<io.github.darkryh.yukitoki.manager/DownloadSnapshot?> // io.github.darkryh.yukitoki.manager/DownloadTask.state.<get-state>|<get-state>(){}[0]
+
+    abstract suspend fun await(): io.github.darkryh.yukitoki.manager/DownloadResult // io.github.darkryh.yukitoki.manager/DownloadTask.await|await(){}[0]
+    abstract suspend fun cancel(): io.github.darkryh.yukitoki.manager/CommandResult // io.github.darkryh.yukitoki.manager/DownloadTask.cancel|cancel(){}[0]
+    abstract suspend fun pause(): io.github.darkryh.yukitoki.manager/CommandResult // io.github.darkryh.yukitoki.manager/DownloadTask.pause|pause(){}[0]
+    abstract suspend fun resume(): io.github.darkryh.yukitoki.manager/CommandResult // io.github.darkryh.yukitoki.manager/DownloadTask.resume|resume(){}[0]
+    abstract suspend fun retry(): io.github.darkryh.yukitoki.manager/CommandResult // io.github.darkryh.yukitoki.manager/DownloadTask.retry|retry(){}[0]
+}
+
+sealed interface io.github.darkryh.yukitoki.manager/CommandResult { // io.github.darkryh.yukitoki.manager/CommandResult|null[0]
+    final class Accepted : io.github.darkryh.yukitoki.manager/CommandResult { // io.github.darkryh.yukitoki.manager/CommandResult.Accepted|null[0]
+        constructor <init>(io.github.darkryh.yukitoki.manager/DownloadId? = ...) // io.github.darkryh.yukitoki.manager/CommandResult.Accepted.<init>|<init>(io.github.darkryh.yukitoki.manager.DownloadId?){}[0]
+
+        final val id // io.github.darkryh.yukitoki.manager/CommandResult.Accepted.id|{}id[0]
+            final fun <get-id>(): io.github.darkryh.yukitoki.manager/DownloadId? // io.github.darkryh.yukitoki.manager/CommandResult.Accepted.id.<get-id>|<get-id>(){}[0]
+
+        final fun component1(): io.github.darkryh.yukitoki.manager/DownloadId? // io.github.darkryh.yukitoki.manager/CommandResult.Accepted.component1|component1(){}[0]
+        final fun copy(io.github.darkryh.yukitoki.manager/DownloadId? = ...): io.github.darkryh.yukitoki.manager/CommandResult.Accepted // io.github.darkryh.yukitoki.manager/CommandResult.Accepted.copy|copy(io.github.darkryh.yukitoki.manager.DownloadId?){}[0]
+        final fun equals(kotlin/Any?): kotlin/Boolean // io.github.darkryh.yukitoki.manager/CommandResult.Accepted.equals|equals(kotlin.Any?){}[0]
+        final fun hashCode(): kotlin/Int // io.github.darkryh.yukitoki.manager/CommandResult.Accepted.hashCode|hashCode(){}[0]
+        final fun toString(): kotlin/String // io.github.darkryh.yukitoki.manager/CommandResult.Accepted.toString|toString(){}[0]
+    }
+
+    final class Rejected : io.github.darkryh.yukitoki.manager/CommandResult { // io.github.darkryh.yukitoki.manager/CommandResult.Rejected|null[0]
+        constructor <init>(kotlin/String, io.github.darkryh.yukitoki.manager/DownloadFailure? = ...) // io.github.darkryh.yukitoki.manager/CommandResult.Rejected.<init>|<init>(kotlin.String;io.github.darkryh.yukitoki.manager.DownloadFailure?){}[0]
+
+        final val failure // io.github.darkryh.yukitoki.manager/CommandResult.Rejected.failure|{}failure[0]
+            final fun <get-failure>(): io.github.darkryh.yukitoki.manager/DownloadFailure? // io.github.darkryh.yukitoki.manager/CommandResult.Rejected.failure.<get-failure>|<get-failure>(){}[0]
+        final val reason // io.github.darkryh.yukitoki.manager/CommandResult.Rejected.reason|{}reason[0]
+            final fun <get-reason>(): kotlin/String // io.github.darkryh.yukitoki.manager/CommandResult.Rejected.reason.<get-reason>|<get-reason>(){}[0]
+
+        final fun component1(): kotlin/String // io.github.darkryh.yukitoki.manager/CommandResult.Rejected.component1|component1(){}[0]
+        final fun component2(): io.github.darkryh.yukitoki.manager/DownloadFailure? // io.github.darkryh.yukitoki.manager/CommandResult.Rejected.component2|component2(){}[0]
+        final fun copy(kotlin/String = ..., io.github.darkryh.yukitoki.manager/DownloadFailure? = ...): io.github.darkryh.yukitoki.manager/CommandResult.Rejected // io.github.darkryh.yukitoki.manager/CommandResult.Rejected.copy|copy(kotlin.String;io.github.darkryh.yukitoki.manager.DownloadFailure?){}[0]
+        final fun equals(kotlin/Any?): kotlin/Boolean // io.github.darkryh.yukitoki.manager/CommandResult.Rejected.equals|equals(kotlin.Any?){}[0]
+        final fun hashCode(): kotlin/Int // io.github.darkryh.yukitoki.manager/CommandResult.Rejected.hashCode|hashCode(){}[0]
+        final fun toString(): kotlin/String // io.github.darkryh.yukitoki.manager/CommandResult.Rejected.toString|toString(){}[0]
+    }
+}
+
+sealed interface io.github.darkryh.yukitoki.manager/DownloadConcurrency { // io.github.darkryh.yukitoki.manager/DownloadConcurrency|null[0]
+    final class Fixed : io.github.darkryh.yukitoki.manager/DownloadConcurrency { // io.github.darkryh.yukitoki.manager/DownloadConcurrency.Fixed|null[0]
+        constructor <init>(kotlin/Int) // io.github.darkryh.yukitoki.manager/DownloadConcurrency.Fixed.<init>|<init>(kotlin.Int){}[0]
+
+        final val downloads // io.github.darkryh.yukitoki.manager/DownloadConcurrency.Fixed.downloads|{}downloads[0]
+            final fun <get-downloads>(): kotlin/Int // io.github.darkryh.yukitoki.manager/DownloadConcurrency.Fixed.downloads.<get-downloads>|<get-downloads>(){}[0]
+
+        final fun component1(): kotlin/Int // io.github.darkryh.yukitoki.manager/DownloadConcurrency.Fixed.component1|component1(){}[0]
+        final fun copy(kotlin/Int = ...): io.github.darkryh.yukitoki.manager/DownloadConcurrency.Fixed // io.github.darkryh.yukitoki.manager/DownloadConcurrency.Fixed.copy|copy(kotlin.Int){}[0]
+        final fun equals(kotlin/Any?): kotlin/Boolean // io.github.darkryh.yukitoki.manager/DownloadConcurrency.Fixed.equals|equals(kotlin.Any?){}[0]
+        final fun hashCode(): kotlin/Int // io.github.darkryh.yukitoki.manager/DownloadConcurrency.Fixed.hashCode|hashCode(){}[0]
+        final fun toString(): kotlin/String // io.github.darkryh.yukitoki.manager/DownloadConcurrency.Fixed.toString|toString(){}[0]
+    }
+
+    final object Default : io.github.darkryh.yukitoki.manager/DownloadConcurrency { // io.github.darkryh.yukitoki.manager/DownloadConcurrency.Default|null[0]
+        final fun equals(kotlin/Any?): kotlin/Boolean // io.github.darkryh.yukitoki.manager/DownloadConcurrency.Default.equals|equals(kotlin.Any?){}[0]
+        final fun hashCode(): kotlin/Int // io.github.darkryh.yukitoki.manager/DownloadConcurrency.Default.hashCode|hashCode(){}[0]
+        final fun toString(): kotlin/String // io.github.darkryh.yukitoki.manager/DownloadConcurrency.Default.toString|toString(){}[0]
+    }
+}
+
+sealed interface io.github.darkryh.yukitoki.manager/DownloadDestination { // io.github.darkryh.yukitoki.manager/DownloadDestination|null[0]
+    final class Directory : io.github.darkryh.yukitoki.manager/DownloadDestination { // io.github.darkryh.yukitoki.manager/DownloadDestination.Directory|null[0]
+        constructor <init>(okio/Path, kotlin/String? = ...) // io.github.darkryh.yukitoki.manager/DownloadDestination.Directory.<init>|<init>(okio.Path;kotlin.String?){}[0]
+
+        final val fileName // io.github.darkryh.yukitoki.manager/DownloadDestination.Directory.fileName|{}fileName[0]
+            final fun <get-fileName>(): kotlin/String? // io.github.darkryh.yukitoki.manager/DownloadDestination.Directory.fileName.<get-fileName>|<get-fileName>(){}[0]
+        final val path // io.github.darkryh.yukitoki.manager/DownloadDestination.Directory.path|{}path[0]
+            final fun <get-path>(): okio/Path // io.github.darkryh.yukitoki.manager/DownloadDestination.Directory.path.<get-path>|<get-path>(){}[0]
+
+        final fun component1(): okio/Path // io.github.darkryh.yukitoki.manager/DownloadDestination.Directory.component1|component1(){}[0]
+        final fun component2(): kotlin/String? // io.github.darkryh.yukitoki.manager/DownloadDestination.Directory.component2|component2(){}[0]
+        final fun copy(okio/Path = ..., kotlin/String? = ...): io.github.darkryh.yukitoki.manager/DownloadDestination.Directory // io.github.darkryh.yukitoki.manager/DownloadDestination.Directory.copy|copy(okio.Path;kotlin.String?){}[0]
+        final fun equals(kotlin/Any?): kotlin/Boolean // io.github.darkryh.yukitoki.manager/DownloadDestination.Directory.equals|equals(kotlin.Any?){}[0]
+        final fun hashCode(): kotlin/Int // io.github.darkryh.yukitoki.manager/DownloadDestination.Directory.hashCode|hashCode(){}[0]
+        final fun toString(): kotlin/String // io.github.darkryh.yukitoki.manager/DownloadDestination.Directory.toString|toString(){}[0]
+    }
+
+    final class File : io.github.darkryh.yukitoki.manager/DownloadDestination { // io.github.darkryh.yukitoki.manager/DownloadDestination.File|null[0]
+        constructor <init>(okio/Path) // io.github.darkryh.yukitoki.manager/DownloadDestination.File.<init>|<init>(okio.Path){}[0]
+
+        final val path // io.github.darkryh.yukitoki.manager/DownloadDestination.File.path|{}path[0]
+            final fun <get-path>(): okio/Path // io.github.darkryh.yukitoki.manager/DownloadDestination.File.path.<get-path>|<get-path>(){}[0]
+
+        final fun component1(): okio/Path // io.github.darkryh.yukitoki.manager/DownloadDestination.File.component1|component1(){}[0]
+        final fun copy(okio/Path = ...): io.github.darkryh.yukitoki.manager/DownloadDestination.File // io.github.darkryh.yukitoki.manager/DownloadDestination.File.copy|copy(okio.Path){}[0]
+        final fun equals(kotlin/Any?): kotlin/Boolean // io.github.darkryh.yukitoki.manager/DownloadDestination.File.equals|equals(kotlin.Any?){}[0]
+        final fun hashCode(): kotlin/Int // io.github.darkryh.yukitoki.manager/DownloadDestination.File.hashCode|hashCode(){}[0]
+        final fun toString(): kotlin/String // io.github.darkryh.yukitoki.manager/DownloadDestination.File.toString|toString(){}[0]
+    }
+
+    final object Default : io.github.darkryh.yukitoki.manager/DownloadDestination { // io.github.darkryh.yukitoki.manager/DownloadDestination.Default|null[0]
+        final fun equals(kotlin/Any?): kotlin/Boolean // io.github.darkryh.yukitoki.manager/DownloadDestination.Default.equals|equals(kotlin.Any?){}[0]
+        final fun hashCode(): kotlin/Int // io.github.darkryh.yukitoki.manager/DownloadDestination.Default.hashCode|hashCode(){}[0]
+        final fun toString(): kotlin/String // io.github.darkryh.yukitoki.manager/DownloadDestination.Default.toString|toString(){}[0]
+    }
+}
+
+sealed interface io.github.darkryh.yukitoki.manager/DownloadFailure { // io.github.darkryh.yukitoki.manager/DownloadFailure|null[0]
+    final class AlreadyExists : io.github.darkryh.yukitoki.manager/DownloadFailure { // io.github.darkryh.yukitoki.manager/DownloadFailure.AlreadyExists|null[0]
+        constructor <init>(okio/Path? = ..., kotlin/String? = ...) // io.github.darkryh.yukitoki.manager/DownloadFailure.AlreadyExists.<init>|<init>(okio.Path?;kotlin.String?){}[0]
+
+        final val message // io.github.darkryh.yukitoki.manager/DownloadFailure.AlreadyExists.message|{}message[0]
+            final fun <get-message>(): kotlin/String? // io.github.darkryh.yukitoki.manager/DownloadFailure.AlreadyExists.message.<get-message>|<get-message>(){}[0]
+        final val path // io.github.darkryh.yukitoki.manager/DownloadFailure.AlreadyExists.path|{}path[0]
+            final fun <get-path>(): okio/Path? // io.github.darkryh.yukitoki.manager/DownloadFailure.AlreadyExists.path.<get-path>|<get-path>(){}[0]
+
+        final fun component1(): okio/Path? // io.github.darkryh.yukitoki.manager/DownloadFailure.AlreadyExists.component1|component1(){}[0]
+        final fun component2(): kotlin/String? // io.github.darkryh.yukitoki.manager/DownloadFailure.AlreadyExists.component2|component2(){}[0]
+        final fun copy(okio/Path? = ..., kotlin/String? = ...): io.github.darkryh.yukitoki.manager/DownloadFailure.AlreadyExists // io.github.darkryh.yukitoki.manager/DownloadFailure.AlreadyExists.copy|copy(okio.Path?;kotlin.String?){}[0]
+        final fun equals(kotlin/Any?): kotlin/Boolean // io.github.darkryh.yukitoki.manager/DownloadFailure.AlreadyExists.equals|equals(kotlin.Any?){}[0]
+        final fun hashCode(): kotlin/Int // io.github.darkryh.yukitoki.manager/DownloadFailure.AlreadyExists.hashCode|hashCode(){}[0]
+        final fun toString(): kotlin/String // io.github.darkryh.yukitoki.manager/DownloadFailure.AlreadyExists.toString|toString(){}[0]
+    }
+
+    final class ChecksumMismatch : io.github.darkryh.yukitoki.manager/DownloadFailure { // io.github.darkryh.yukitoki.manager/DownloadFailure.ChecksumMismatch|null[0]
+        constructor <init>(kotlin/String, kotlin/String) // io.github.darkryh.yukitoki.manager/DownloadFailure.ChecksumMismatch.<init>|<init>(kotlin.String;kotlin.String){}[0]
+
+        final val actualHex // io.github.darkryh.yukitoki.manager/DownloadFailure.ChecksumMismatch.actualHex|{}actualHex[0]
+            final fun <get-actualHex>(): kotlin/String // io.github.darkryh.yukitoki.manager/DownloadFailure.ChecksumMismatch.actualHex.<get-actualHex>|<get-actualHex>(){}[0]
+        final val expectedHex // io.github.darkryh.yukitoki.manager/DownloadFailure.ChecksumMismatch.expectedHex|{}expectedHex[0]
+            final fun <get-expectedHex>(): kotlin/String // io.github.darkryh.yukitoki.manager/DownloadFailure.ChecksumMismatch.expectedHex.<get-expectedHex>|<get-expectedHex>(){}[0]
+
+        final fun component1(): kotlin/String // io.github.darkryh.yukitoki.manager/DownloadFailure.ChecksumMismatch.component1|component1(){}[0]
+        final fun component2(): kotlin/String // io.github.darkryh.yukitoki.manager/DownloadFailure.ChecksumMismatch.component2|component2(){}[0]
+        final fun copy(kotlin/String = ..., kotlin/String = ...): io.github.darkryh.yukitoki.manager/DownloadFailure.ChecksumMismatch // io.github.darkryh.yukitoki.manager/DownloadFailure.ChecksumMismatch.copy|copy(kotlin.String;kotlin.String){}[0]
+        final fun equals(kotlin/Any?): kotlin/Boolean // io.github.darkryh.yukitoki.manager/DownloadFailure.ChecksumMismatch.equals|equals(kotlin.Any?){}[0]
+        final fun hashCode(): kotlin/Int // io.github.darkryh.yukitoki.manager/DownloadFailure.ChecksumMismatch.hashCode|hashCode(){}[0]
+        final fun toString(): kotlin/String // io.github.darkryh.yukitoki.manager/DownloadFailure.ChecksumMismatch.toString|toString(){}[0]
+    }
+
+    final class FileSystem : io.github.darkryh.yukitoki.manager/DownloadFailure { // io.github.darkryh.yukitoki.manager/DownloadFailure.FileSystem|null[0]
+        constructor <init>(kotlin/String) // io.github.darkryh.yukitoki.manager/DownloadFailure.FileSystem.<init>|<init>(kotlin.String){}[0]
+
+        final val message // io.github.darkryh.yukitoki.manager/DownloadFailure.FileSystem.message|{}message[0]
+            final fun <get-message>(): kotlin/String // io.github.darkryh.yukitoki.manager/DownloadFailure.FileSystem.message.<get-message>|<get-message>(){}[0]
+
+        final fun component1(): kotlin/String // io.github.darkryh.yukitoki.manager/DownloadFailure.FileSystem.component1|component1(){}[0]
+        final fun copy(kotlin/String = ...): io.github.darkryh.yukitoki.manager/DownloadFailure.FileSystem // io.github.darkryh.yukitoki.manager/DownloadFailure.FileSystem.copy|copy(kotlin.String){}[0]
+        final fun equals(kotlin/Any?): kotlin/Boolean // io.github.darkryh.yukitoki.manager/DownloadFailure.FileSystem.equals|equals(kotlin.Any?){}[0]
+        final fun hashCode(): kotlin/Int // io.github.darkryh.yukitoki.manager/DownloadFailure.FileSystem.hashCode|hashCode(){}[0]
+        final fun toString(): kotlin/String // io.github.darkryh.yukitoki.manager/DownloadFailure.FileSystem.toString|toString(){}[0]
+    }
+
+    final class HttpStatus : io.github.darkryh.yukitoki.manager/DownloadFailure { // io.github.darkryh.yukitoki.manager/DownloadFailure.HttpStatus|null[0]
+        constructor <init>(kotlin/Int, kotlin/String? = ..., kotlin.time/Duration? = ...) // io.github.darkryh.yukitoki.manager/DownloadFailure.HttpStatus.<init>|<init>(kotlin.Int;kotlin.String?;kotlin.time.Duration?){}[0]
+
+        final val code // io.github.darkryh.yukitoki.manager/DownloadFailure.HttpStatus.code|{}code[0]
+            final fun <get-code>(): kotlin/Int // io.github.darkryh.yukitoki.manager/DownloadFailure.HttpStatus.code.<get-code>|<get-code>(){}[0]
+        final val message // io.github.darkryh.yukitoki.manager/DownloadFailure.HttpStatus.message|{}message[0]
+            final fun <get-message>(): kotlin/String? // io.github.darkryh.yukitoki.manager/DownloadFailure.HttpStatus.message.<get-message>|<get-message>(){}[0]
+        final val retryAfter // io.github.darkryh.yukitoki.manager/DownloadFailure.HttpStatus.retryAfter|{}retryAfter[0]
+            final fun <get-retryAfter>(): kotlin.time/Duration? // io.github.darkryh.yukitoki.manager/DownloadFailure.HttpStatus.retryAfter.<get-retryAfter>|<get-retryAfter>(){}[0]
+
+        final fun component1(): kotlin/Int // io.github.darkryh.yukitoki.manager/DownloadFailure.HttpStatus.component1|component1(){}[0]
+        final fun component2(): kotlin/String? // io.github.darkryh.yukitoki.manager/DownloadFailure.HttpStatus.component2|component2(){}[0]
+        final fun component3(): kotlin.time/Duration? // io.github.darkryh.yukitoki.manager/DownloadFailure.HttpStatus.component3|component3(){}[0]
+        final fun copy(kotlin/Int = ..., kotlin/String? = ..., kotlin.time/Duration? = ...): io.github.darkryh.yukitoki.manager/DownloadFailure.HttpStatus // io.github.darkryh.yukitoki.manager/DownloadFailure.HttpStatus.copy|copy(kotlin.Int;kotlin.String?;kotlin.time.Duration?){}[0]
+        final fun equals(kotlin/Any?): kotlin/Boolean // io.github.darkryh.yukitoki.manager/DownloadFailure.HttpStatus.equals|equals(kotlin.Any?){}[0]
+        final fun hashCode(): kotlin/Int // io.github.darkryh.yukitoki.manager/DownloadFailure.HttpStatus.hashCode|hashCode(){}[0]
+        final fun toString(): kotlin/String // io.github.darkryh.yukitoki.manager/DownloadFailure.HttpStatus.toString|toString(){}[0]
+    }
+
+    final class IntegrityMismatch : io.github.darkryh.yukitoki.manager/DownloadFailure { // io.github.darkryh.yukitoki.manager/DownloadFailure.IntegrityMismatch|null[0]
+        constructor <init>(kotlin/Long, kotlin/Long) // io.github.darkryh.yukitoki.manager/DownloadFailure.IntegrityMismatch.<init>|<init>(kotlin.Long;kotlin.Long){}[0]
+
+        final val actualSize // io.github.darkryh.yukitoki.manager/DownloadFailure.IntegrityMismatch.actualSize|{}actualSize[0]
+            final fun <get-actualSize>(): kotlin/Long // io.github.darkryh.yukitoki.manager/DownloadFailure.IntegrityMismatch.actualSize.<get-actualSize>|<get-actualSize>(){}[0]
+        final val expectedSize // io.github.darkryh.yukitoki.manager/DownloadFailure.IntegrityMismatch.expectedSize|{}expectedSize[0]
+            final fun <get-expectedSize>(): kotlin/Long // io.github.darkryh.yukitoki.manager/DownloadFailure.IntegrityMismatch.expectedSize.<get-expectedSize>|<get-expectedSize>(){}[0]
+
+        final fun component1(): kotlin/Long // io.github.darkryh.yukitoki.manager/DownloadFailure.IntegrityMismatch.component1|component1(){}[0]
+        final fun component2(): kotlin/Long // io.github.darkryh.yukitoki.manager/DownloadFailure.IntegrityMismatch.component2|component2(){}[0]
+        final fun copy(kotlin/Long = ..., kotlin/Long = ...): io.github.darkryh.yukitoki.manager/DownloadFailure.IntegrityMismatch // io.github.darkryh.yukitoki.manager/DownloadFailure.IntegrityMismatch.copy|copy(kotlin.Long;kotlin.Long){}[0]
+        final fun equals(kotlin/Any?): kotlin/Boolean // io.github.darkryh.yukitoki.manager/DownloadFailure.IntegrityMismatch.equals|equals(kotlin.Any?){}[0]
+        final fun hashCode(): kotlin/Int // io.github.darkryh.yukitoki.manager/DownloadFailure.IntegrityMismatch.hashCode|hashCode(){}[0]
+        final fun toString(): kotlin/String // io.github.darkryh.yukitoki.manager/DownloadFailure.IntegrityMismatch.toString|toString(){}[0]
+    }
+
+    final class ManagerClosed : io.github.darkryh.yukitoki.manager/DownloadFailure { // io.github.darkryh.yukitoki.manager/DownloadFailure.ManagerClosed|null[0]
+        constructor <init>(kotlin/String = ...) // io.github.darkryh.yukitoki.manager/DownloadFailure.ManagerClosed.<init>|<init>(kotlin.String){}[0]
+
+        final val message // io.github.darkryh.yukitoki.manager/DownloadFailure.ManagerClosed.message|{}message[0]
+            final fun <get-message>(): kotlin/String // io.github.darkryh.yukitoki.manager/DownloadFailure.ManagerClosed.message.<get-message>|<get-message>(){}[0]
+
+        final fun component1(): kotlin/String // io.github.darkryh.yukitoki.manager/DownloadFailure.ManagerClosed.component1|component1(){}[0]
+        final fun copy(kotlin/String = ...): io.github.darkryh.yukitoki.manager/DownloadFailure.ManagerClosed // io.github.darkryh.yukitoki.manager/DownloadFailure.ManagerClosed.copy|copy(kotlin.String){}[0]
+        final fun equals(kotlin/Any?): kotlin/Boolean // io.github.darkryh.yukitoki.manager/DownloadFailure.ManagerClosed.equals|equals(kotlin.Any?){}[0]
+        final fun hashCode(): kotlin/Int // io.github.darkryh.yukitoki.manager/DownloadFailure.ManagerClosed.hashCode|hashCode(){}[0]
+        final fun toString(): kotlin/String // io.github.darkryh.yukitoki.manager/DownloadFailure.ManagerClosed.toString|toString(){}[0]
+    }
+
+    final class Network : io.github.darkryh.yukitoki.manager/DownloadFailure { // io.github.darkryh.yukitoki.manager/DownloadFailure.Network|null[0]
+        constructor <init>(kotlin/String) // io.github.darkryh.yukitoki.manager/DownloadFailure.Network.<init>|<init>(kotlin.String){}[0]
+
+        final val message // io.github.darkryh.yukitoki.manager/DownloadFailure.Network.message|{}message[0]
+            final fun <get-message>(): kotlin/String // io.github.darkryh.yukitoki.manager/DownloadFailure.Network.message.<get-message>|<get-message>(){}[0]
+
+        final fun component1(): kotlin/String // io.github.darkryh.yukitoki.manager/DownloadFailure.Network.component1|component1(){}[0]
+        final fun copy(kotlin/String = ...): io.github.darkryh.yukitoki.manager/DownloadFailure.Network // io.github.darkryh.yukitoki.manager/DownloadFailure.Network.copy|copy(kotlin.String){}[0]
+        final fun equals(kotlin/Any?): kotlin/Boolean // io.github.darkryh.yukitoki.manager/DownloadFailure.Network.equals|equals(kotlin.Any?){}[0]
+        final fun hashCode(): kotlin/Int // io.github.darkryh.yukitoki.manager/DownloadFailure.Network.hashCode|hashCode(){}[0]
+        final fun toString(): kotlin/String // io.github.darkryh.yukitoki.manager/DownloadFailure.Network.toString|toString(){}[0]
+    }
+
+    final class NoSpace : io.github.darkryh.yukitoki.manager/DownloadFailure { // io.github.darkryh.yukitoki.manager/DownloadFailure.NoSpace|null[0]
+        constructor <init>(okio/Path? = ..., kotlin/String? = ...) // io.github.darkryh.yukitoki.manager/DownloadFailure.NoSpace.<init>|<init>(okio.Path?;kotlin.String?){}[0]
+
+        final val message // io.github.darkryh.yukitoki.manager/DownloadFailure.NoSpace.message|{}message[0]
+            final fun <get-message>(): kotlin/String? // io.github.darkryh.yukitoki.manager/DownloadFailure.NoSpace.message.<get-message>|<get-message>(){}[0]
+        final val path // io.github.darkryh.yukitoki.manager/DownloadFailure.NoSpace.path|{}path[0]
+            final fun <get-path>(): okio/Path? // io.github.darkryh.yukitoki.manager/DownloadFailure.NoSpace.path.<get-path>|<get-path>(){}[0]
+
+        final fun component1(): okio/Path? // io.github.darkryh.yukitoki.manager/DownloadFailure.NoSpace.component1|component1(){}[0]
+        final fun component2(): kotlin/String? // io.github.darkryh.yukitoki.manager/DownloadFailure.NoSpace.component2|component2(){}[0]
+        final fun copy(okio/Path? = ..., kotlin/String? = ...): io.github.darkryh.yukitoki.manager/DownloadFailure.NoSpace // io.github.darkryh.yukitoki.manager/DownloadFailure.NoSpace.copy|copy(okio.Path?;kotlin.String?){}[0]
+        final fun equals(kotlin/Any?): kotlin/Boolean // io.github.darkryh.yukitoki.manager/DownloadFailure.NoSpace.equals|equals(kotlin.Any?){}[0]
+        final fun hashCode(): kotlin/Int // io.github.darkryh.yukitoki.manager/DownloadFailure.NoSpace.hashCode|hashCode(){}[0]
+        final fun toString(): kotlin/String // io.github.darkryh.yukitoki.manager/DownloadFailure.NoSpace.toString|toString(){}[0]
+    }
+
+    final class PermissionDenied : io.github.darkryh.yukitoki.manager/DownloadFailure { // io.github.darkryh.yukitoki.manager/DownloadFailure.PermissionDenied|null[0]
+        constructor <init>(okio/Path? = ..., kotlin/String? = ...) // io.github.darkryh.yukitoki.manager/DownloadFailure.PermissionDenied.<init>|<init>(okio.Path?;kotlin.String?){}[0]
+
+        final val message // io.github.darkryh.yukitoki.manager/DownloadFailure.PermissionDenied.message|{}message[0]
+            final fun <get-message>(): kotlin/String? // io.github.darkryh.yukitoki.manager/DownloadFailure.PermissionDenied.message.<get-message>|<get-message>(){}[0]
+        final val path // io.github.darkryh.yukitoki.manager/DownloadFailure.PermissionDenied.path|{}path[0]
+            final fun <get-path>(): okio/Path? // io.github.darkryh.yukitoki.manager/DownloadFailure.PermissionDenied.path.<get-path>|<get-path>(){}[0]
+
+        final fun component1(): okio/Path? // io.github.darkryh.yukitoki.manager/DownloadFailure.PermissionDenied.component1|component1(){}[0]
+        final fun component2(): kotlin/String? // io.github.darkryh.yukitoki.manager/DownloadFailure.PermissionDenied.component2|component2(){}[0]
+        final fun copy(okio/Path? = ..., kotlin/String? = ...): io.github.darkryh.yukitoki.manager/DownloadFailure.PermissionDenied // io.github.darkryh.yukitoki.manager/DownloadFailure.PermissionDenied.copy|copy(okio.Path?;kotlin.String?){}[0]
+        final fun equals(kotlin/Any?): kotlin/Boolean // io.github.darkryh.yukitoki.manager/DownloadFailure.PermissionDenied.equals|equals(kotlin.Any?){}[0]
+        final fun hashCode(): kotlin/Int // io.github.darkryh.yukitoki.manager/DownloadFailure.PermissionDenied.hashCode|hashCode(){}[0]
+        final fun toString(): kotlin/String // io.github.darkryh.yukitoki.manager/DownloadFailure.PermissionDenied.toString|toString(){}[0]
+    }
+
+    final class ServerChanged : io.github.darkryh.yukitoki.manager/DownloadFailure { // io.github.darkryh.yukitoki.manager/DownloadFailure.ServerChanged|null[0]
+        constructor <init>(kotlin/String) // io.github.darkryh.yukitoki.manager/DownloadFailure.ServerChanged.<init>|<init>(kotlin.String){}[0]
+
+        final val message // io.github.darkryh.yukitoki.manager/DownloadFailure.ServerChanged.message|{}message[0]
+            final fun <get-message>(): kotlin/String // io.github.darkryh.yukitoki.manager/DownloadFailure.ServerChanged.message.<get-message>|<get-message>(){}[0]
+
+        final fun component1(): kotlin/String // io.github.darkryh.yukitoki.manager/DownloadFailure.ServerChanged.component1|component1(){}[0]
+        final fun copy(kotlin/String = ...): io.github.darkryh.yukitoki.manager/DownloadFailure.ServerChanged // io.github.darkryh.yukitoki.manager/DownloadFailure.ServerChanged.copy|copy(kotlin.String){}[0]
+        final fun equals(kotlin/Any?): kotlin/Boolean // io.github.darkryh.yukitoki.manager/DownloadFailure.ServerChanged.equals|equals(kotlin.Any?){}[0]
+        final fun hashCode(): kotlin/Int // io.github.darkryh.yukitoki.manager/DownloadFailure.ServerChanged.hashCode|hashCode(){}[0]
+        final fun toString(): kotlin/String // io.github.darkryh.yukitoki.manager/DownloadFailure.ServerChanged.toString|toString(){}[0]
+    }
+
+    final class Timeout : io.github.darkryh.yukitoki.manager/DownloadFailure { // io.github.darkryh.yukitoki.manager/DownloadFailure.Timeout|null[0]
+        constructor <init>(kotlin/String) // io.github.darkryh.yukitoki.manager/DownloadFailure.Timeout.<init>|<init>(kotlin.String){}[0]
+
+        final val message // io.github.darkryh.yukitoki.manager/DownloadFailure.Timeout.message|{}message[0]
+            final fun <get-message>(): kotlin/String // io.github.darkryh.yukitoki.manager/DownloadFailure.Timeout.message.<get-message>|<get-message>(){}[0]
+
+        final fun component1(): kotlin/String // io.github.darkryh.yukitoki.manager/DownloadFailure.Timeout.component1|component1(){}[0]
+        final fun copy(kotlin/String = ...): io.github.darkryh.yukitoki.manager/DownloadFailure.Timeout // io.github.darkryh.yukitoki.manager/DownloadFailure.Timeout.copy|copy(kotlin.String){}[0]
+        final fun equals(kotlin/Any?): kotlin/Boolean // io.github.darkryh.yukitoki.manager/DownloadFailure.Timeout.equals|equals(kotlin.Any?){}[0]
+        final fun hashCode(): kotlin/Int // io.github.darkryh.yukitoki.manager/DownloadFailure.Timeout.hashCode|hashCode(){}[0]
+        final fun toString(): kotlin/String // io.github.darkryh.yukitoki.manager/DownloadFailure.Timeout.toString|toString(){}[0]
+    }
+
+    final class Unexpected : io.github.darkryh.yukitoki.manager/DownloadFailure { // io.github.darkryh.yukitoki.manager/DownloadFailure.Unexpected|null[0]
+        constructor <init>(kotlin/String) // io.github.darkryh.yukitoki.manager/DownloadFailure.Unexpected.<init>|<init>(kotlin.String){}[0]
+
+        final val message // io.github.darkryh.yukitoki.manager/DownloadFailure.Unexpected.message|{}message[0]
+            final fun <get-message>(): kotlin/String // io.github.darkryh.yukitoki.manager/DownloadFailure.Unexpected.message.<get-message>|<get-message>(){}[0]
+
+        final fun component1(): kotlin/String // io.github.darkryh.yukitoki.manager/DownloadFailure.Unexpected.component1|component1(){}[0]
+        final fun copy(kotlin/String = ...): io.github.darkryh.yukitoki.manager/DownloadFailure.Unexpected // io.github.darkryh.yukitoki.manager/DownloadFailure.Unexpected.copy|copy(kotlin.String){}[0]
+        final fun equals(kotlin/Any?): kotlin/Boolean // io.github.darkryh.yukitoki.manager/DownloadFailure.Unexpected.equals|equals(kotlin.Any?){}[0]
+        final fun hashCode(): kotlin/Int // io.github.darkryh.yukitoki.manager/DownloadFailure.Unexpected.hashCode|hashCode(){}[0]
+        final fun toString(): kotlin/String // io.github.darkryh.yukitoki.manager/DownloadFailure.Unexpected.toString|toString(){}[0]
+    }
+
+    final class Unsupported : io.github.darkryh.yukitoki.manager/DownloadFailure { // io.github.darkryh.yukitoki.manager/DownloadFailure.Unsupported|null[0]
+        constructor <init>(kotlin/String) // io.github.darkryh.yukitoki.manager/DownloadFailure.Unsupported.<init>|<init>(kotlin.String){}[0]
+
+        final val message // io.github.darkryh.yukitoki.manager/DownloadFailure.Unsupported.message|{}message[0]
+            final fun <get-message>(): kotlin/String // io.github.darkryh.yukitoki.manager/DownloadFailure.Unsupported.message.<get-message>|<get-message>(){}[0]
+
+        final fun component1(): kotlin/String // io.github.darkryh.yukitoki.manager/DownloadFailure.Unsupported.component1|component1(){}[0]
+        final fun copy(kotlin/String = ...): io.github.darkryh.yukitoki.manager/DownloadFailure.Unsupported // io.github.darkryh.yukitoki.manager/DownloadFailure.Unsupported.copy|copy(kotlin.String){}[0]
+        final fun equals(kotlin/Any?): kotlin/Boolean // io.github.darkryh.yukitoki.manager/DownloadFailure.Unsupported.equals|equals(kotlin.Any?){}[0]
+        final fun hashCode(): kotlin/Int // io.github.darkryh.yukitoki.manager/DownloadFailure.Unsupported.hashCode|hashCode(){}[0]
+        final fun toString(): kotlin/String // io.github.darkryh.yukitoki.manager/DownloadFailure.Unsupported.toString|toString(){}[0]
+    }
+}
+
+sealed interface io.github.darkryh.yukitoki.manager/DownloadIntentResult { // io.github.darkryh.yukitoki.manager/DownloadIntentResult|null[0]
+    final class Rejected : io.github.darkryh.yukitoki.manager/DownloadIntentResult { // io.github.darkryh.yukitoki.manager/DownloadIntentResult.Rejected|null[0]
+        constructor <init>(kotlin/String) // io.github.darkryh.yukitoki.manager/DownloadIntentResult.Rejected.<init>|<init>(kotlin.String){}[0]
+
+        final val reason // io.github.darkryh.yukitoki.manager/DownloadIntentResult.Rejected.reason|{}reason[0]
+            final fun <get-reason>(): kotlin/String // io.github.darkryh.yukitoki.manager/DownloadIntentResult.Rejected.reason.<get-reason>|<get-reason>(){}[0]
+
+        final fun component1(): kotlin/String // io.github.darkryh.yukitoki.manager/DownloadIntentResult.Rejected.component1|component1(){}[0]
+        final fun copy(kotlin/String = ...): io.github.darkryh.yukitoki.manager/DownloadIntentResult.Rejected // io.github.darkryh.yukitoki.manager/DownloadIntentResult.Rejected.copy|copy(kotlin.String){}[0]
+        final fun equals(kotlin/Any?): kotlin/Boolean // io.github.darkryh.yukitoki.manager/DownloadIntentResult.Rejected.equals|equals(kotlin.Any?){}[0]
+        final fun hashCode(): kotlin/Int // io.github.darkryh.yukitoki.manager/DownloadIntentResult.Rejected.hashCode|hashCode(){}[0]
+        final fun toString(): kotlin/String // io.github.darkryh.yukitoki.manager/DownloadIntentResult.Rejected.toString|toString(){}[0]
+    }
+
+    final object Dispatched : io.github.darkryh.yukitoki.manager/DownloadIntentResult { // io.github.darkryh.yukitoki.manager/DownloadIntentResult.Dispatched|null[0]
+        final fun equals(kotlin/Any?): kotlin/Boolean // io.github.darkryh.yukitoki.manager/DownloadIntentResult.Dispatched.equals|equals(kotlin.Any?){}[0]
+        final fun hashCode(): kotlin/Int // io.github.darkryh.yukitoki.manager/DownloadIntentResult.Dispatched.hashCode|hashCode(){}[0]
+        final fun toString(): kotlin/String // io.github.darkryh.yukitoki.manager/DownloadIntentResult.Dispatched.toString|toString(){}[0]
+    }
+}
+
+sealed interface io.github.darkryh.yukitoki.manager/DownloadResult { // io.github.darkryh.yukitoki.manager/DownloadResult|null[0]
+    final class Failure : io.github.darkryh.yukitoki.manager/DownloadResult { // io.github.darkryh.yukitoki.manager/DownloadResult.Failure|null[0]
+        constructor <init>(io.github.darkryh.yukitoki.manager/DownloadFailure) // io.github.darkryh.yukitoki.manager/DownloadResult.Failure.<init>|<init>(io.github.darkryh.yukitoki.manager.DownloadFailure){}[0]
+
+        final val failure // io.github.darkryh.yukitoki.manager/DownloadResult.Failure.failure|{}failure[0]
+            final fun <get-failure>(): io.github.darkryh.yukitoki.manager/DownloadFailure // io.github.darkryh.yukitoki.manager/DownloadResult.Failure.failure.<get-failure>|<get-failure>(){}[0]
+
+        final fun component1(): io.github.darkryh.yukitoki.manager/DownloadFailure // io.github.darkryh.yukitoki.manager/DownloadResult.Failure.component1|component1(){}[0]
+        final fun copy(io.github.darkryh.yukitoki.manager/DownloadFailure = ...): io.github.darkryh.yukitoki.manager/DownloadResult.Failure // io.github.darkryh.yukitoki.manager/DownloadResult.Failure.copy|copy(io.github.darkryh.yukitoki.manager.DownloadFailure){}[0]
+        final fun equals(kotlin/Any?): kotlin/Boolean // io.github.darkryh.yukitoki.manager/DownloadResult.Failure.equals|equals(kotlin.Any?){}[0]
+        final fun hashCode(): kotlin/Int // io.github.darkryh.yukitoki.manager/DownloadResult.Failure.hashCode|hashCode(){}[0]
+        final fun toString(): kotlin/String // io.github.darkryh.yukitoki.manager/DownloadResult.Failure.toString|toString(){}[0]
+    }
+
+    final class Success : io.github.darkryh.yukitoki.manager/DownloadResult { // io.github.darkryh.yukitoki.manager/DownloadResult.Success|null[0]
+        constructor <init>(io.github.darkryh.yukitoki.manager/DownloadSuccess) // io.github.darkryh.yukitoki.manager/DownloadResult.Success.<init>|<init>(io.github.darkryh.yukitoki.manager.DownloadSuccess){}[0]
+
+        final val success // io.github.darkryh.yukitoki.manager/DownloadResult.Success.success|{}success[0]
+            final fun <get-success>(): io.github.darkryh.yukitoki.manager/DownloadSuccess // io.github.darkryh.yukitoki.manager/DownloadResult.Success.success.<get-success>|<get-success>(){}[0]
+
+        final fun component1(): io.github.darkryh.yukitoki.manager/DownloadSuccess // io.github.darkryh.yukitoki.manager/DownloadResult.Success.component1|component1(){}[0]
+        final fun copy(io.github.darkryh.yukitoki.manager/DownloadSuccess = ...): io.github.darkryh.yukitoki.manager/DownloadResult.Success // io.github.darkryh.yukitoki.manager/DownloadResult.Success.copy|copy(io.github.darkryh.yukitoki.manager.DownloadSuccess){}[0]
+        final fun equals(kotlin/Any?): kotlin/Boolean // io.github.darkryh.yukitoki.manager/DownloadResult.Success.equals|equals(kotlin.Any?){}[0]
+        final fun hashCode(): kotlin/Int // io.github.darkryh.yukitoki.manager/DownloadResult.Success.hashCode|hashCode(){}[0]
+        final fun toString(): kotlin/String // io.github.darkryh.yukitoki.manager/DownloadResult.Success.toString|toString(){}[0]
+    }
+
+    final object Cancelled : io.github.darkryh.yukitoki.manager/DownloadResult { // io.github.darkryh.yukitoki.manager/DownloadResult.Cancelled|null[0]
+        final fun equals(kotlin/Any?): kotlin/Boolean // io.github.darkryh.yukitoki.manager/DownloadResult.Cancelled.equals|equals(kotlin.Any?){}[0]
+        final fun hashCode(): kotlin/Int // io.github.darkryh.yukitoki.manager/DownloadResult.Cancelled.hashCode|hashCode(){}[0]
+        final fun toString(): kotlin/String // io.github.darkryh.yukitoki.manager/DownloadResult.Cancelled.toString|toString(){}[0]
+    }
+}
+
+sealed interface io.github.darkryh.yukitoki.manager/DownloadSegmentation { // io.github.darkryh.yukitoki.manager/DownloadSegmentation|null[0]
+    final class MaxSegments : io.github.darkryh.yukitoki.manager/DownloadSegmentation { // io.github.darkryh.yukitoki.manager/DownloadSegmentation.MaxSegments|null[0]
+        constructor <init>(kotlin/Int) // io.github.darkryh.yukitoki.manager/DownloadSegmentation.MaxSegments.<init>|<init>(kotlin.Int){}[0]
+
+        final val segments // io.github.darkryh.yukitoki.manager/DownloadSegmentation.MaxSegments.segments|{}segments[0]
+            final fun <get-segments>(): kotlin/Int // io.github.darkryh.yukitoki.manager/DownloadSegmentation.MaxSegments.segments.<get-segments>|<get-segments>(){}[0]
+
+        final fun component1(): kotlin/Int // io.github.darkryh.yukitoki.manager/DownloadSegmentation.MaxSegments.component1|component1(){}[0]
+        final fun copy(kotlin/Int = ...): io.github.darkryh.yukitoki.manager/DownloadSegmentation.MaxSegments // io.github.darkryh.yukitoki.manager/DownloadSegmentation.MaxSegments.copy|copy(kotlin.Int){}[0]
+        final fun equals(kotlin/Any?): kotlin/Boolean // io.github.darkryh.yukitoki.manager/DownloadSegmentation.MaxSegments.equals|equals(kotlin.Any?){}[0]
+        final fun hashCode(): kotlin/Int // io.github.darkryh.yukitoki.manager/DownloadSegmentation.MaxSegments.hashCode|hashCode(){}[0]
+        final fun toString(): kotlin/String // io.github.darkryh.yukitoki.manager/DownloadSegmentation.MaxSegments.toString|toString(){}[0]
+    }
+
+    final object Auto : io.github.darkryh.yukitoki.manager/DownloadSegmentation { // io.github.darkryh.yukitoki.manager/DownloadSegmentation.Auto|null[0]
+        final fun equals(kotlin/Any?): kotlin/Boolean // io.github.darkryh.yukitoki.manager/DownloadSegmentation.Auto.equals|equals(kotlin.Any?){}[0]
+        final fun hashCode(): kotlin/Int // io.github.darkryh.yukitoki.manager/DownloadSegmentation.Auto.hashCode|hashCode(){}[0]
+        final fun toString(): kotlin/String // io.github.darkryh.yukitoki.manager/DownloadSegmentation.Auto.toString|toString(){}[0]
+    }
+
+    final object Single : io.github.darkryh.yukitoki.manager/DownloadSegmentation { // io.github.darkryh.yukitoki.manager/DownloadSegmentation.Single|null[0]
+        final fun equals(kotlin/Any?): kotlin/Boolean // io.github.darkryh.yukitoki.manager/DownloadSegmentation.Single.equals|equals(kotlin.Any?){}[0]
+        final fun hashCode(): kotlin/Int // io.github.darkryh.yukitoki.manager/DownloadSegmentation.Single.hashCode|hashCode(){}[0]
+        final fun toString(): kotlin/String // io.github.darkryh.yukitoki.manager/DownloadSegmentation.Single.toString|toString(){}[0]
+    }
+}
+
+sealed interface io.github.darkryh.yukitoki.manager/DownloadState { // io.github.darkryh.yukitoki.manager/DownloadState|null[0]
+    final class Failed : io.github.darkryh.yukitoki.manager/DownloadState { // io.github.darkryh.yukitoki.manager/DownloadState.Failed|null[0]
+        constructor <init>(io.github.darkryh.yukitoki.manager/DownloadFailure) // io.github.darkryh.yukitoki.manager/DownloadState.Failed.<init>|<init>(io.github.darkryh.yukitoki.manager.DownloadFailure){}[0]
+
+        final val failure // io.github.darkryh.yukitoki.manager/DownloadState.Failed.failure|{}failure[0]
+            final fun <get-failure>(): io.github.darkryh.yukitoki.manager/DownloadFailure // io.github.darkryh.yukitoki.manager/DownloadState.Failed.failure.<get-failure>|<get-failure>(){}[0]
+
+        final fun component1(): io.github.darkryh.yukitoki.manager/DownloadFailure // io.github.darkryh.yukitoki.manager/DownloadState.Failed.component1|component1(){}[0]
+        final fun copy(io.github.darkryh.yukitoki.manager/DownloadFailure = ...): io.github.darkryh.yukitoki.manager/DownloadState.Failed // io.github.darkryh.yukitoki.manager/DownloadState.Failed.copy|copy(io.github.darkryh.yukitoki.manager.DownloadFailure){}[0]
+        final fun equals(kotlin/Any?): kotlin/Boolean // io.github.darkryh.yukitoki.manager/DownloadState.Failed.equals|equals(kotlin.Any?){}[0]
+        final fun hashCode(): kotlin/Int // io.github.darkryh.yukitoki.manager/DownloadState.Failed.hashCode|hashCode(){}[0]
+        final fun toString(): kotlin/String // io.github.darkryh.yukitoki.manager/DownloadState.Failed.toString|toString(){}[0]
+    }
+
+    final class Running : io.github.darkryh.yukitoki.manager/DownloadState { // io.github.darkryh.yukitoki.manager/DownloadState.Running|null[0]
+        constructor <init>(io.github.darkryh.yukitoki.manager/DownloadProgress) // io.github.darkryh.yukitoki.manager/DownloadState.Running.<init>|<init>(io.github.darkryh.yukitoki.manager.DownloadProgress){}[0]
+
+        final val progress // io.github.darkryh.yukitoki.manager/DownloadState.Running.progress|{}progress[0]
+            final fun <get-progress>(): io.github.darkryh.yukitoki.manager/DownloadProgress // io.github.darkryh.yukitoki.manager/DownloadState.Running.progress.<get-progress>|<get-progress>(){}[0]
+
+        final fun component1(): io.github.darkryh.yukitoki.manager/DownloadProgress // io.github.darkryh.yukitoki.manager/DownloadState.Running.component1|component1(){}[0]
+        final fun copy(io.github.darkryh.yukitoki.manager/DownloadProgress = ...): io.github.darkryh.yukitoki.manager/DownloadState.Running // io.github.darkryh.yukitoki.manager/DownloadState.Running.copy|copy(io.github.darkryh.yukitoki.manager.DownloadProgress){}[0]
+        final fun equals(kotlin/Any?): kotlin/Boolean // io.github.darkryh.yukitoki.manager/DownloadState.Running.equals|equals(kotlin.Any?){}[0]
+        final fun hashCode(): kotlin/Int // io.github.darkryh.yukitoki.manager/DownloadState.Running.hashCode|hashCode(){}[0]
+        final fun toString(): kotlin/String // io.github.darkryh.yukitoki.manager/DownloadState.Running.toString|toString(){}[0]
+    }
+
+    final class Succeeded : io.github.darkryh.yukitoki.manager/DownloadState { // io.github.darkryh.yukitoki.manager/DownloadState.Succeeded|null[0]
+        constructor <init>(io.github.darkryh.yukitoki.manager/DownloadSuccess) // io.github.darkryh.yukitoki.manager/DownloadState.Succeeded.<init>|<init>(io.github.darkryh.yukitoki.manager.DownloadSuccess){}[0]
+
+        final val result // io.github.darkryh.yukitoki.manager/DownloadState.Succeeded.result|{}result[0]
+            final fun <get-result>(): io.github.darkryh.yukitoki.manager/DownloadSuccess // io.github.darkryh.yukitoki.manager/DownloadState.Succeeded.result.<get-result>|<get-result>(){}[0]
+
+        final fun component1(): io.github.darkryh.yukitoki.manager/DownloadSuccess // io.github.darkryh.yukitoki.manager/DownloadState.Succeeded.component1|component1(){}[0]
+        final fun copy(io.github.darkryh.yukitoki.manager/DownloadSuccess = ...): io.github.darkryh.yukitoki.manager/DownloadState.Succeeded // io.github.darkryh.yukitoki.manager/DownloadState.Succeeded.copy|copy(io.github.darkryh.yukitoki.manager.DownloadSuccess){}[0]
+        final fun equals(kotlin/Any?): kotlin/Boolean // io.github.darkryh.yukitoki.manager/DownloadState.Succeeded.equals|equals(kotlin.Any?){}[0]
+        final fun hashCode(): kotlin/Int // io.github.darkryh.yukitoki.manager/DownloadState.Succeeded.hashCode|hashCode(){}[0]
+        final fun toString(): kotlin/String // io.github.darkryh.yukitoki.manager/DownloadState.Succeeded.toString|toString(){}[0]
+    }
+
+    final object Cancelled : io.github.darkryh.yukitoki.manager/DownloadState { // io.github.darkryh.yukitoki.manager/DownloadState.Cancelled|null[0]
+        final fun equals(kotlin/Any?): kotlin/Boolean // io.github.darkryh.yukitoki.manager/DownloadState.Cancelled.equals|equals(kotlin.Any?){}[0]
+        final fun hashCode(): kotlin/Int // io.github.darkryh.yukitoki.manager/DownloadState.Cancelled.hashCode|hashCode(){}[0]
+        final fun toString(): kotlin/String // io.github.darkryh.yukitoki.manager/DownloadState.Cancelled.toString|toString(){}[0]
+    }
+
+    final object Cancelling : io.github.darkryh.yukitoki.manager/DownloadState { // io.github.darkryh.yukitoki.manager/DownloadState.Cancelling|null[0]
+        final fun equals(kotlin/Any?): kotlin/Boolean // io.github.darkryh.yukitoki.manager/DownloadState.Cancelling.equals|equals(kotlin.Any?){}[0]
+        final fun hashCode(): kotlin/Int // io.github.darkryh.yukitoki.manager/DownloadState.Cancelling.hashCode|hashCode(){}[0]
+        final fun toString(): kotlin/String // io.github.darkryh.yukitoki.manager/DownloadState.Cancelling.toString|toString(){}[0]
+    }
+
+    final object Paused : io.github.darkryh.yukitoki.manager/DownloadState { // io.github.darkryh.yukitoki.manager/DownloadState.Paused|null[0]
+        final fun equals(kotlin/Any?): kotlin/Boolean // io.github.darkryh.yukitoki.manager/DownloadState.Paused.equals|equals(kotlin.Any?){}[0]
+        final fun hashCode(): kotlin/Int // io.github.darkryh.yukitoki.manager/DownloadState.Paused.hashCode|hashCode(){}[0]
+        final fun toString(): kotlin/String // io.github.darkryh.yukitoki.manager/DownloadState.Paused.toString|toString(){}[0]
+    }
+
+    final object Pausing : io.github.darkryh.yukitoki.manager/DownloadState { // io.github.darkryh.yukitoki.manager/DownloadState.Pausing|null[0]
+        final fun equals(kotlin/Any?): kotlin/Boolean // io.github.darkryh.yukitoki.manager/DownloadState.Pausing.equals|equals(kotlin.Any?){}[0]
+        final fun hashCode(): kotlin/Int // io.github.darkryh.yukitoki.manager/DownloadState.Pausing.hashCode|hashCode(){}[0]
+        final fun toString(): kotlin/String // io.github.darkryh.yukitoki.manager/DownloadState.Pausing.toString|toString(){}[0]
+    }
+
+    final object Queued : io.github.darkryh.yukitoki.manager/DownloadState { // io.github.darkryh.yukitoki.manager/DownloadState.Queued|null[0]
+        final fun equals(kotlin/Any?): kotlin/Boolean // io.github.darkryh.yukitoki.manager/DownloadState.Queued.equals|equals(kotlin.Any?){}[0]
+        final fun hashCode(): kotlin/Int // io.github.darkryh.yukitoki.manager/DownloadState.Queued.hashCode|hashCode(){}[0]
+        final fun toString(): kotlin/String // io.github.darkryh.yukitoki.manager/DownloadState.Queued.toString|toString(){}[0]
+    }
+
+    final object Starting : io.github.darkryh.yukitoki.manager/DownloadState { // io.github.darkryh.yukitoki.manager/DownloadState.Starting|null[0]
+        final fun equals(kotlin/Any?): kotlin/Boolean // io.github.darkryh.yukitoki.manager/DownloadState.Starting.equals|equals(kotlin.Any?){}[0]
+        final fun hashCode(): kotlin/Int // io.github.darkryh.yukitoki.manager/DownloadState.Starting.hashCode|hashCode(){}[0]
+        final fun toString(): kotlin/String // io.github.darkryh.yukitoki.manager/DownloadState.Starting.toString|toString(){}[0]
+    }
+}
+
+final class io.github.darkryh.yukitoki.manager/ChecksumSpec { // io.github.darkryh.yukitoki.manager/ChecksumSpec|null[0]
+    constructor <init>(io.github.darkryh.yukitoki.manager/ChecksumAlgorithm, kotlin/String) // io.github.darkryh.yukitoki.manager/ChecksumSpec.<init>|<init>(io.github.darkryh.yukitoki.manager.ChecksumAlgorithm;kotlin.String){}[0]
+
+    final val algorithm // io.github.darkryh.yukitoki.manager/ChecksumSpec.algorithm|{}algorithm[0]
+        final fun <get-algorithm>(): io.github.darkryh.yukitoki.manager/ChecksumAlgorithm // io.github.darkryh.yukitoki.manager/ChecksumSpec.algorithm.<get-algorithm>|<get-algorithm>(){}[0]
+    final val expectedHex // io.github.darkryh.yukitoki.manager/ChecksumSpec.expectedHex|{}expectedHex[0]
+        final fun <get-expectedHex>(): kotlin/String // io.github.darkryh.yukitoki.manager/ChecksumSpec.expectedHex.<get-expectedHex>|<get-expectedHex>(){}[0]
+
+    final fun component1(): io.github.darkryh.yukitoki.manager/ChecksumAlgorithm // io.github.darkryh.yukitoki.manager/ChecksumSpec.component1|component1(){}[0]
+    final fun component2(): kotlin/String // io.github.darkryh.yukitoki.manager/ChecksumSpec.component2|component2(){}[0]
+    final fun copy(io.github.darkryh.yukitoki.manager/ChecksumAlgorithm = ..., kotlin/String = ...): io.github.darkryh.yukitoki.manager/ChecksumSpec // io.github.darkryh.yukitoki.manager/ChecksumSpec.copy|copy(io.github.darkryh.yukitoki.manager.ChecksumAlgorithm;kotlin.String){}[0]
+    final fun equals(kotlin/Any?): kotlin/Boolean // io.github.darkryh.yukitoki.manager/ChecksumSpec.equals|equals(kotlin.Any?){}[0]
+    final fun hashCode(): kotlin/Int // io.github.darkryh.yukitoki.manager/ChecksumSpec.hashCode|hashCode(){}[0]
+    final fun toString(): kotlin/String // io.github.darkryh.yukitoki.manager/ChecksumSpec.toString|toString(){}[0]
+}
+
+final class io.github.darkryh.yukitoki.manager/DefaultDownloadManager : io.github.darkryh.yukitoki.manager/DownloadManager { // io.github.darkryh.yukitoki.manager/DefaultDownloadManager|null[0]
+    constructor <init>(io.ktor.client/HttpClient, kotlinx.coroutines/CoroutineScope, okio/FileSystem = ..., io.github.darkryh.yukitoki.manager/DownloadManagerConfig = ..., kotlinx.coroutines/CoroutineDispatcher = ...) // io.github.darkryh.yukitoki.manager/DefaultDownloadManager.<init>|<init>(io.ktor.client.HttpClient;kotlinx.coroutines.CoroutineScope;okio.FileSystem;io.github.darkryh.yukitoki.manager.DownloadManagerConfig;kotlinx.coroutines.CoroutineDispatcher){}[0]
+
+    final val state // io.github.darkryh.yukitoki.manager/DefaultDownloadManager.state|{}state[0]
+        final fun <get-state>(): kotlinx.coroutines.flow/StateFlow<io.github.darkryh.yukitoki.manager/DownloadManagerState> // io.github.darkryh.yukitoki.manager/DefaultDownloadManager.state.<get-state>|<get-state>(){}[0]
+
+    final fun close() // io.github.darkryh.yukitoki.manager/DefaultDownloadManager.close|close(){}[0]
+    final fun observe(io.github.darkryh.yukitoki.manager/DownloadId): kotlinx.coroutines.flow/Flow<io.github.darkryh.yukitoki.manager/DownloadSnapshot?> // io.github.darkryh.yukitoki.manager/DefaultDownloadManager.observe|observe(io.github.darkryh.yukitoki.manager.DownloadId){}[0]
+    final suspend fun await(io.github.darkryh.yukitoki.manager/DownloadId): io.github.darkryh.yukitoki.manager/DownloadResult? // io.github.darkryh.yukitoki.manager/DefaultDownloadManager.await|await(io.github.darkryh.yukitoki.manager.DownloadId){}[0]
+    final suspend fun cancel(io.github.darkryh.yukitoki.manager/DownloadId): io.github.darkryh.yukitoki.manager/CommandResult // io.github.darkryh.yukitoki.manager/DefaultDownloadManager.cancel|cancel(io.github.darkryh.yukitoki.manager.DownloadId){}[0]
+    final suspend fun cancelAll(): io.github.darkryh.yukitoki.manager/CommandResult // io.github.darkryh.yukitoki.manager/DefaultDownloadManager.cancelAll|cancelAll(){}[0]
+    final suspend fun clearFinished(): io.github.darkryh.yukitoki.manager/CommandResult // io.github.darkryh.yukitoki.manager/DefaultDownloadManager.clearFinished|clearFinished(){}[0]
+    final suspend fun download(io.github.darkryh.yukitoki.manager/DownloadRequest): io.github.darkryh.yukitoki.manager/DownloadResult // io.github.darkryh.yukitoki.manager/DefaultDownloadManager.download|download(io.github.darkryh.yukitoki.manager.DownloadRequest){}[0]
+    final suspend fun enqueue(io.github.darkryh.yukitoki.manager/DownloadRequest, io.github.darkryh.yukitoki.manager/DownloadId): io.github.darkryh.yukitoki.manager/DownloadTask // io.github.darkryh.yukitoki.manager/DefaultDownloadManager.enqueue|enqueue(io.github.darkryh.yukitoki.manager.DownloadRequest;io.github.darkryh.yukitoki.manager.DownloadId){}[0]
+    final suspend fun moveWithinPriority(io.github.darkryh.yukitoki.manager/DownloadId, kotlin/Int): io.github.darkryh.yukitoki.manager/CommandResult // io.github.darkryh.yukitoki.manager/DefaultDownloadManager.moveWithinPriority|moveWithinPriority(io.github.darkryh.yukitoki.manager.DownloadId;kotlin.Int){}[0]
+    final suspend fun pause(io.github.darkryh.yukitoki.manager/DownloadId): io.github.darkryh.yukitoki.manager/CommandResult // io.github.darkryh.yukitoki.manager/DefaultDownloadManager.pause|pause(io.github.darkryh.yukitoki.manager.DownloadId){}[0]
+    final suspend fun pauseAll(): io.github.darkryh.yukitoki.manager/CommandResult // io.github.darkryh.yukitoki.manager/DefaultDownloadManager.pauseAll|pauseAll(){}[0]
+    final suspend fun remove(io.github.darkryh.yukitoki.manager/DownloadId, kotlin/Boolean): io.github.darkryh.yukitoki.manager/CommandResult // io.github.darkryh.yukitoki.manager/DefaultDownloadManager.remove|remove(io.github.darkryh.yukitoki.manager.DownloadId;kotlin.Boolean){}[0]
+    final suspend fun resume(io.github.darkryh.yukitoki.manager/DownloadId): io.github.darkryh.yukitoki.manager/CommandResult // io.github.darkryh.yukitoki.manager/DefaultDownloadManager.resume|resume(io.github.darkryh.yukitoki.manager.DownloadId){}[0]
+    final suspend fun resumeAll(): io.github.darkryh.yukitoki.manager/CommandResult // io.github.darkryh.yukitoki.manager/DefaultDownloadManager.resumeAll|resumeAll(){}[0]
+    final suspend fun retry(io.github.darkryh.yukitoki.manager/DownloadId): io.github.darkryh.yukitoki.manager/CommandResult // io.github.darkryh.yukitoki.manager/DefaultDownloadManager.retry|retry(io.github.darkryh.yukitoki.manager.DownloadId){}[0]
+    final suspend fun retryAllFailed(): io.github.darkryh.yukitoki.manager/CommandResult // io.github.darkryh.yukitoki.manager/DefaultDownloadManager.retryAllFailed|retryAllFailed(){}[0]
+    final suspend fun setConcurrency(io.github.darkryh.yukitoki.manager/DownloadConcurrency): io.github.darkryh.yukitoki.manager/CommandResult // io.github.darkryh.yukitoki.manager/DefaultDownloadManager.setConcurrency|setConcurrency(io.github.darkryh.yukitoki.manager.DownloadConcurrency){}[0]
+    final suspend fun shutdown(kotlin/Boolean) // io.github.darkryh.yukitoki.manager/DefaultDownloadManager.shutdown|shutdown(kotlin.Boolean){}[0]
+}
+
+final class io.github.darkryh.yukitoki.manager/DownloadIntentRequest { // io.github.darkryh.yukitoki.manager/DownloadIntentRequest|null[0]
+    constructor <init>(kotlin/String, kotlin/String? = ...) // io.github.darkryh.yukitoki.manager/DownloadIntentRequest.<init>|<init>(kotlin.String;kotlin.String?){}[0]
+
+    final val suggestedFileName // io.github.darkryh.yukitoki.manager/DownloadIntentRequest.suggestedFileName|{}suggestedFileName[0]
+        final fun <get-suggestedFileName>(): kotlin/String? // io.github.darkryh.yukitoki.manager/DownloadIntentRequest.suggestedFileName.<get-suggestedFileName>|<get-suggestedFileName>(){}[0]
+    final val url // io.github.darkryh.yukitoki.manager/DownloadIntentRequest.url|{}url[0]
+        final fun <get-url>(): kotlin/String // io.github.darkryh.yukitoki.manager/DownloadIntentRequest.url.<get-url>|<get-url>(){}[0]
+
+    final fun component1(): kotlin/String // io.github.darkryh.yukitoki.manager/DownloadIntentRequest.component1|component1(){}[0]
+    final fun component2(): kotlin/String? // io.github.darkryh.yukitoki.manager/DownloadIntentRequest.component2|component2(){}[0]
+    final fun copy(kotlin/String = ..., kotlin/String? = ...): io.github.darkryh.yukitoki.manager/DownloadIntentRequest // io.github.darkryh.yukitoki.manager/DownloadIntentRequest.copy|copy(kotlin.String;kotlin.String?){}[0]
+    final fun equals(kotlin/Any?): kotlin/Boolean // io.github.darkryh.yukitoki.manager/DownloadIntentRequest.equals|equals(kotlin.Any?){}[0]
+    final fun hashCode(): kotlin/Int // io.github.darkryh.yukitoki.manager/DownloadIntentRequest.hashCode|hashCode(){}[0]
+    final fun toString(): kotlin/String // io.github.darkryh.yukitoki.manager/DownloadIntentRequest.toString|toString(){}[0]
+}
+
+final class io.github.darkryh.yukitoki.manager/DownloadManagerConfig { // io.github.darkryh.yukitoki.manager/DownloadManagerConfig|null[0]
+    constructor <init>(io.github.darkryh.yukitoki.manager/DownloadConcurrency = ..., kotlin/Int = ..., kotlin/Boolean = ..., kotlin/Boolean = ..., kotlin.time/Duration = ..., kotlin/Int = ...) // io.github.darkryh.yukitoki.manager/DownloadManagerConfig.<init>|<init>(io.github.darkryh.yukitoki.manager.DownloadConcurrency;kotlin.Int;kotlin.Boolean;kotlin.Boolean;kotlin.time.Duration;kotlin.Int){}[0]
+
+    final val bufferSizeBytes // io.github.darkryh.yukitoki.manager/DownloadManagerConfig.bufferSizeBytes|{}bufferSizeBytes[0]
+        final fun <get-bufferSizeBytes>(): kotlin/Int // io.github.darkryh.yukitoki.manager/DownloadManagerConfig.bufferSizeBytes.<get-bufferSizeBytes>|<get-bufferSizeBytes>(){}[0]
+    final val concurrency // io.github.darkryh.yukitoki.manager/DownloadManagerConfig.concurrency|{}concurrency[0]
+        final fun <get-concurrency>(): io.github.darkryh.yukitoki.manager/DownloadConcurrency // io.github.darkryh.yukitoki.manager/DownloadManagerConfig.concurrency.<get-concurrency>|<get-concurrency>(){}[0]
+    final val deletePartialOnCancel // io.github.darkryh.yukitoki.manager/DownloadManagerConfig.deletePartialOnCancel|{}deletePartialOnCancel[0]
+        final fun <get-deletePartialOnCancel>(): kotlin/Boolean // io.github.darkryh.yukitoki.manager/DownloadManagerConfig.deletePartialOnCancel.<get-deletePartialOnCancel>|<get-deletePartialOnCancel>(){}[0]
+    final val deletePartialOnFailure // io.github.darkryh.yukitoki.manager/DownloadManagerConfig.deletePartialOnFailure|{}deletePartialOnFailure[0]
+        final fun <get-deletePartialOnFailure>(): kotlin/Boolean // io.github.darkryh.yukitoki.manager/DownloadManagerConfig.deletePartialOnFailure.<get-deletePartialOnFailure>|<get-deletePartialOnFailure>(){}[0]
+    final val idleTimeout // io.github.darkryh.yukitoki.manager/DownloadManagerConfig.idleTimeout|{}idleTimeout[0]
+        final fun <get-idleTimeout>(): kotlin.time/Duration // io.github.darkryh.yukitoki.manager/DownloadManagerConfig.idleTimeout.<get-idleTimeout>|<get-idleTimeout>(){}[0]
+    final val maxRetainedFinished // io.github.darkryh.yukitoki.manager/DownloadManagerConfig.maxRetainedFinished|{}maxRetainedFinished[0]
+        final fun <get-maxRetainedFinished>(): kotlin/Int // io.github.darkryh.yukitoki.manager/DownloadManagerConfig.maxRetainedFinished.<get-maxRetainedFinished>|<get-maxRetainedFinished>(){}[0]
+
+    final fun component1(): io.github.darkryh.yukitoki.manager/DownloadConcurrency // io.github.darkryh.yukitoki.manager/DownloadManagerConfig.component1|component1(){}[0]
+    final fun component2(): kotlin/Int // io.github.darkryh.yukitoki.manager/DownloadManagerConfig.component2|component2(){}[0]
+    final fun component3(): kotlin/Boolean // io.github.darkryh.yukitoki.manager/DownloadManagerConfig.component3|component3(){}[0]
+    final fun component4(): kotlin/Boolean // io.github.darkryh.yukitoki.manager/DownloadManagerConfig.component4|component4(){}[0]
+    final fun component5(): kotlin.time/Duration // io.github.darkryh.yukitoki.manager/DownloadManagerConfig.component5|component5(){}[0]
+    final fun component6(): kotlin/Int // io.github.darkryh.yukitoki.manager/DownloadManagerConfig.component6|component6(){}[0]
+    final fun copy(io.github.darkryh.yukitoki.manager/DownloadConcurrency = ..., kotlin/Int = ..., kotlin/Boolean = ..., kotlin/Boolean = ..., kotlin.time/Duration = ..., kotlin/Int = ...): io.github.darkryh.yukitoki.manager/DownloadManagerConfig // io.github.darkryh.yukitoki.manager/DownloadManagerConfig.copy|copy(io.github.darkryh.yukitoki.manager.DownloadConcurrency;kotlin.Int;kotlin.Boolean;kotlin.Boolean;kotlin.time.Duration;kotlin.Int){}[0]
+    final fun equals(kotlin/Any?): kotlin/Boolean // io.github.darkryh.yukitoki.manager/DownloadManagerConfig.equals|equals(kotlin.Any?){}[0]
+    final fun hashCode(): kotlin/Int // io.github.darkryh.yukitoki.manager/DownloadManagerConfig.hashCode|hashCode(){}[0]
+    final fun toString(): kotlin/String // io.github.darkryh.yukitoki.manager/DownloadManagerConfig.toString|toString(){}[0]
+}
+
+final class io.github.darkryh.yukitoki.manager/DownloadManagerState { // io.github.darkryh.yukitoki.manager/DownloadManagerState|null[0]
+    constructor <init>(kotlin.collections/Map<io.github.darkryh.yukitoki.manager/DownloadId, io.github.darkryh.yukitoki.manager/DownloadSnapshot>, kotlin.collections/List<io.github.darkryh.yukitoki.manager/DownloadId>, kotlin.collections/Set<io.github.darkryh.yukitoki.manager/DownloadId>, kotlin/Int) // io.github.darkryh.yukitoki.manager/DownloadManagerState.<init>|<init>(kotlin.collections.Map<io.github.darkryh.yukitoki.manager.DownloadId,io.github.darkryh.yukitoki.manager.DownloadSnapshot>;kotlin.collections.List<io.github.darkryh.yukitoki.manager.DownloadId>;kotlin.collections.Set<io.github.darkryh.yukitoki.manager.DownloadId>;kotlin.Int){}[0]
+
+    final val active // io.github.darkryh.yukitoki.manager/DownloadManagerState.active|{}active[0]
+        final fun <get-active>(): kotlin.collections/Set<io.github.darkryh.yukitoki.manager/DownloadId> // io.github.darkryh.yukitoki.manager/DownloadManagerState.active.<get-active>|<get-active>(){}[0]
+    final val maxConcurrentDownloads // io.github.darkryh.yukitoki.manager/DownloadManagerState.maxConcurrentDownloads|{}maxConcurrentDownloads[0]
+        final fun <get-maxConcurrentDownloads>(): kotlin/Int // io.github.darkryh.yukitoki.manager/DownloadManagerState.maxConcurrentDownloads.<get-maxConcurrentDownloads>|<get-maxConcurrentDownloads>(){}[0]
+    final val pending // io.github.darkryh.yukitoki.manager/DownloadManagerState.pending|{}pending[0]
+        final fun <get-pending>(): kotlin.collections/List<io.github.darkryh.yukitoki.manager/DownloadId> // io.github.darkryh.yukitoki.manager/DownloadManagerState.pending.<get-pending>|<get-pending>(){}[0]
+    final val snapshots // io.github.darkryh.yukitoki.manager/DownloadManagerState.snapshots|{}snapshots[0]
+        final fun <get-snapshots>(): kotlin.collections/Map<io.github.darkryh.yukitoki.manager/DownloadId, io.github.darkryh.yukitoki.manager/DownloadSnapshot> // io.github.darkryh.yukitoki.manager/DownloadManagerState.snapshots.<get-snapshots>|<get-snapshots>(){}[0]
+
+    final fun component1(): kotlin.collections/Map<io.github.darkryh.yukitoki.manager/DownloadId, io.github.darkryh.yukitoki.manager/DownloadSnapshot> // io.github.darkryh.yukitoki.manager/DownloadManagerState.component1|component1(){}[0]
+    final fun component2(): kotlin.collections/List<io.github.darkryh.yukitoki.manager/DownloadId> // io.github.darkryh.yukitoki.manager/DownloadManagerState.component2|component2(){}[0]
+    final fun component3(): kotlin.collections/Set<io.github.darkryh.yukitoki.manager/DownloadId> // io.github.darkryh.yukitoki.manager/DownloadManagerState.component3|component3(){}[0]
+    final fun component4(): kotlin/Int // io.github.darkryh.yukitoki.manager/DownloadManagerState.component4|component4(){}[0]
+    final fun copy(kotlin.collections/Map<io.github.darkryh.yukitoki.manager/DownloadId, io.github.darkryh.yukitoki.manager/DownloadSnapshot> = ..., kotlin.collections/List<io.github.darkryh.yukitoki.manager/DownloadId> = ..., kotlin.collections/Set<io.github.darkryh.yukitoki.manager/DownloadId> = ..., kotlin/Int = ...): io.github.darkryh.yukitoki.manager/DownloadManagerState // io.github.darkryh.yukitoki.manager/DownloadManagerState.copy|copy(kotlin.collections.Map<io.github.darkryh.yukitoki.manager.DownloadId,io.github.darkryh.yukitoki.manager.DownloadSnapshot>;kotlin.collections.List<io.github.darkryh.yukitoki.manager.DownloadId>;kotlin.collections.Set<io.github.darkryh.yukitoki.manager.DownloadId>;kotlin.Int){}[0]
+    final fun equals(kotlin/Any?): kotlin/Boolean // io.github.darkryh.yukitoki.manager/DownloadManagerState.equals|equals(kotlin.Any?){}[0]
+    final fun hashCode(): kotlin/Int // io.github.darkryh.yukitoki.manager/DownloadManagerState.hashCode|hashCode(){}[0]
+    final fun toString(): kotlin/String // io.github.darkryh.yukitoki.manager/DownloadManagerState.toString|toString(){}[0]
+}
+
+final class io.github.darkryh.yukitoki.manager/DownloadProgress { // io.github.darkryh.yukitoki.manager/DownloadProgress|null[0]
+    constructor <init>(kotlin/Long, kotlin/Long?, kotlin/Long?, kotlin.time/Duration?) // io.github.darkryh.yukitoki.manager/DownloadProgress.<init>|<init>(kotlin.Long;kotlin.Long?;kotlin.Long?;kotlin.time.Duration?){}[0]
+
+    final val bytesDownloaded // io.github.darkryh.yukitoki.manager/DownloadProgress.bytesDownloaded|{}bytesDownloaded[0]
+        final fun <get-bytesDownloaded>(): kotlin/Long // io.github.darkryh.yukitoki.manager/DownloadProgress.bytesDownloaded.<get-bytesDownloaded>|<get-bytesDownloaded>(){}[0]
+    final val eta // io.github.darkryh.yukitoki.manager/DownloadProgress.eta|{}eta[0]
+        final fun <get-eta>(): kotlin.time/Duration? // io.github.darkryh.yukitoki.manager/DownloadProgress.eta.<get-eta>|<get-eta>(){}[0]
+    final val fraction // io.github.darkryh.yukitoki.manager/DownloadProgress.fraction|{}fraction[0]
+        final fun <get-fraction>(): kotlin/Double? // io.github.darkryh.yukitoki.manager/DownloadProgress.fraction.<get-fraction>|<get-fraction>(){}[0]
+    final val speedBytesPerSecond // io.github.darkryh.yukitoki.manager/DownloadProgress.speedBytesPerSecond|{}speedBytesPerSecond[0]
+        final fun <get-speedBytesPerSecond>(): kotlin/Long? // io.github.darkryh.yukitoki.manager/DownloadProgress.speedBytesPerSecond.<get-speedBytesPerSecond>|<get-speedBytesPerSecond>(){}[0]
+    final val totalBytes // io.github.darkryh.yukitoki.manager/DownloadProgress.totalBytes|{}totalBytes[0]
+        final fun <get-totalBytes>(): kotlin/Long? // io.github.darkryh.yukitoki.manager/DownloadProgress.totalBytes.<get-totalBytes>|<get-totalBytes>(){}[0]
+
+    final fun component1(): kotlin/Long // io.github.darkryh.yukitoki.manager/DownloadProgress.component1|component1(){}[0]
+    final fun component2(): kotlin/Long? // io.github.darkryh.yukitoki.manager/DownloadProgress.component2|component2(){}[0]
+    final fun component3(): kotlin/Long? // io.github.darkryh.yukitoki.manager/DownloadProgress.component3|component3(){}[0]
+    final fun component4(): kotlin.time/Duration? // io.github.darkryh.yukitoki.manager/DownloadProgress.component4|component4(){}[0]
+    final fun copy(kotlin/Long = ..., kotlin/Long? = ..., kotlin/Long? = ..., kotlin.time/Duration? = ...): io.github.darkryh.yukitoki.manager/DownloadProgress // io.github.darkryh.yukitoki.manager/DownloadProgress.copy|copy(kotlin.Long;kotlin.Long?;kotlin.Long?;kotlin.time.Duration?){}[0]
+    final fun equals(kotlin/Any?): kotlin/Boolean // io.github.darkryh.yukitoki.manager/DownloadProgress.equals|equals(kotlin.Any?){}[0]
+    final fun hashCode(): kotlin/Int // io.github.darkryh.yukitoki.manager/DownloadProgress.hashCode|hashCode(){}[0]
+    final fun toString(): kotlin/String // io.github.darkryh.yukitoki.manager/DownloadProgress.toString|toString(){}[0]
+}
+
+final class io.github.darkryh.yukitoki.manager/DownloadRejectedException : kotlin/IllegalStateException { // io.github.darkryh.yukitoki.manager/DownloadRejectedException|null[0]
+    constructor <init>(io.github.darkryh.yukitoki.manager/DownloadFailure) // io.github.darkryh.yukitoki.manager/DownloadRejectedException.<init>|<init>(io.github.darkryh.yukitoki.manager.DownloadFailure){}[0]
+
+    final val failure // io.github.darkryh.yukitoki.manager/DownloadRejectedException.failure|{}failure[0]
+        final fun <get-failure>(): io.github.darkryh.yukitoki.manager/DownloadFailure // io.github.darkryh.yukitoki.manager/DownloadRejectedException.failure.<get-failure>|<get-failure>(){}[0]
+}
+
+final class io.github.darkryh.yukitoki.manager/DownloadRequest { // io.github.darkryh.yukitoki.manager/DownloadRequest|null[0]
+    constructor <init>(kotlin/String, io.github.darkryh.yukitoki.manager/DownloadDestination = ..., io.ktor.http/Headers = ..., io.github.darkryh.yukitoki.manager/OverwritePolicy = ..., io.github.darkryh.yukitoki.manager/RetryPolicy = ..., kotlin/Long? = ..., io.github.darkryh.yukitoki.manager/ProgressGranularity = ..., io.github.darkryh.yukitoki.manager/DownloadPriority = ..., io.github.darkryh.yukitoki.manager/DownloadSegmentation = ..., io.github.darkryh.yukitoki.manager/ChecksumSpec? = ...) // io.github.darkryh.yukitoki.manager/DownloadRequest.<init>|<init>(kotlin.String;io.github.darkryh.yukitoki.manager.DownloadDestination;io.ktor.http.Headers;io.github.darkryh.yukitoki.manager.OverwritePolicy;io.github.darkryh.yukitoki.manager.RetryPolicy;kotlin.Long?;io.github.darkryh.yukitoki.manager.ProgressGranularity;io.github.darkryh.yukitoki.manager.DownloadPriority;io.github.darkryh.yukitoki.manager.DownloadSegmentation;io.github.darkryh.yukitoki.manager.ChecksumSpec?){}[0]
+
+    final val destination // io.github.darkryh.yukitoki.manager/DownloadRequest.destination|{}destination[0]
+        final fun <get-destination>(): io.github.darkryh.yukitoki.manager/DownloadDestination // io.github.darkryh.yukitoki.manager/DownloadRequest.destination.<get-destination>|<get-destination>(){}[0]
+    final val expectedChecksum // io.github.darkryh.yukitoki.manager/DownloadRequest.expectedChecksum|{}expectedChecksum[0]
+        final fun <get-expectedChecksum>(): io.github.darkryh.yukitoki.manager/ChecksumSpec? // io.github.darkryh.yukitoki.manager/DownloadRequest.expectedChecksum.<get-expectedChecksum>|<get-expectedChecksum>(){}[0]
+    final val expectedSizeBytes // io.github.darkryh.yukitoki.manager/DownloadRequest.expectedSizeBytes|{}expectedSizeBytes[0]
+        final fun <get-expectedSizeBytes>(): kotlin/Long? // io.github.darkryh.yukitoki.manager/DownloadRequest.expectedSizeBytes.<get-expectedSizeBytes>|<get-expectedSizeBytes>(){}[0]
+    final val headers // io.github.darkryh.yukitoki.manager/DownloadRequest.headers|{}headers[0]
+        final fun <get-headers>(): io.ktor.http/Headers // io.github.darkryh.yukitoki.manager/DownloadRequest.headers.<get-headers>|<get-headers>(){}[0]
+    final val overwritePolicy // io.github.darkryh.yukitoki.manager/DownloadRequest.overwritePolicy|{}overwritePolicy[0]
+        final fun <get-overwritePolicy>(): io.github.darkryh.yukitoki.manager/OverwritePolicy // io.github.darkryh.yukitoki.manager/DownloadRequest.overwritePolicy.<get-overwritePolicy>|<get-overwritePolicy>(){}[0]
+    final val priority // io.github.darkryh.yukitoki.manager/DownloadRequest.priority|{}priority[0]
+        final fun <get-priority>(): io.github.darkryh.yukitoki.manager/DownloadPriority // io.github.darkryh.yukitoki.manager/DownloadRequest.priority.<get-priority>|<get-priority>(){}[0]
+    final val progressGranularity // io.github.darkryh.yukitoki.manager/DownloadRequest.progressGranularity|{}progressGranularity[0]
+        final fun <get-progressGranularity>(): io.github.darkryh.yukitoki.manager/ProgressGranularity // io.github.darkryh.yukitoki.manager/DownloadRequest.progressGranularity.<get-progressGranularity>|<get-progressGranularity>(){}[0]
+    final val retryPolicy // io.github.darkryh.yukitoki.manager/DownloadRequest.retryPolicy|{}retryPolicy[0]
+        final fun <get-retryPolicy>(): io.github.darkryh.yukitoki.manager/RetryPolicy // io.github.darkryh.yukitoki.manager/DownloadRequest.retryPolicy.<get-retryPolicy>|<get-retryPolicy>(){}[0]
+    final val segmentation // io.github.darkryh.yukitoki.manager/DownloadRequest.segmentation|{}segmentation[0]
+        final fun <get-segmentation>(): io.github.darkryh.yukitoki.manager/DownloadSegmentation // io.github.darkryh.yukitoki.manager/DownloadRequest.segmentation.<get-segmentation>|<get-segmentation>(){}[0]
+    final val url // io.github.darkryh.yukitoki.manager/DownloadRequest.url|{}url[0]
+        final fun <get-url>(): kotlin/String // io.github.darkryh.yukitoki.manager/DownloadRequest.url.<get-url>|<get-url>(){}[0]
+
+    final fun component1(): kotlin/String // io.github.darkryh.yukitoki.manager/DownloadRequest.component1|component1(){}[0]
+    final fun component10(): io.github.darkryh.yukitoki.manager/ChecksumSpec? // io.github.darkryh.yukitoki.manager/DownloadRequest.component10|component10(){}[0]
+    final fun component2(): io.github.darkryh.yukitoki.manager/DownloadDestination // io.github.darkryh.yukitoki.manager/DownloadRequest.component2|component2(){}[0]
+    final fun component3(): io.ktor.http/Headers // io.github.darkryh.yukitoki.manager/DownloadRequest.component3|component3(){}[0]
+    final fun component4(): io.github.darkryh.yukitoki.manager/OverwritePolicy // io.github.darkryh.yukitoki.manager/DownloadRequest.component4|component4(){}[0]
+    final fun component5(): io.github.darkryh.yukitoki.manager/RetryPolicy // io.github.darkryh.yukitoki.manager/DownloadRequest.component5|component5(){}[0]
+    final fun component6(): kotlin/Long? // io.github.darkryh.yukitoki.manager/DownloadRequest.component6|component6(){}[0]
+    final fun component7(): io.github.darkryh.yukitoki.manager/ProgressGranularity // io.github.darkryh.yukitoki.manager/DownloadRequest.component7|component7(){}[0]
+    final fun component8(): io.github.darkryh.yukitoki.manager/DownloadPriority // io.github.darkryh.yukitoki.manager/DownloadRequest.component8|component8(){}[0]
+    final fun component9(): io.github.darkryh.yukitoki.manager/DownloadSegmentation // io.github.darkryh.yukitoki.manager/DownloadRequest.component9|component9(){}[0]
+    final fun copy(kotlin/String = ..., io.github.darkryh.yukitoki.manager/DownloadDestination = ..., io.ktor.http/Headers = ..., io.github.darkryh.yukitoki.manager/OverwritePolicy = ..., io.github.darkryh.yukitoki.manager/RetryPolicy = ..., kotlin/Long? = ..., io.github.darkryh.yukitoki.manager/ProgressGranularity = ..., io.github.darkryh.yukitoki.manager/DownloadPriority = ..., io.github.darkryh.yukitoki.manager/DownloadSegmentation = ..., io.github.darkryh.yukitoki.manager/ChecksumSpec? = ...): io.github.darkryh.yukitoki.manager/DownloadRequest // io.github.darkryh.yukitoki.manager/DownloadRequest.copy|copy(kotlin.String;io.github.darkryh.yukitoki.manager.DownloadDestination;io.ktor.http.Headers;io.github.darkryh.yukitoki.manager.OverwritePolicy;io.github.darkryh.yukitoki.manager.RetryPolicy;kotlin.Long?;io.github.darkryh.yukitoki.manager.ProgressGranularity;io.github.darkryh.yukitoki.manager.DownloadPriority;io.github.darkryh.yukitoki.manager.DownloadSegmentation;io.github.darkryh.yukitoki.manager.ChecksumSpec?){}[0]
+    final fun equals(kotlin/Any?): kotlin/Boolean // io.github.darkryh.yukitoki.manager/DownloadRequest.equals|equals(kotlin.Any?){}[0]
+    final fun hashCode(): kotlin/Int // io.github.darkryh.yukitoki.manager/DownloadRequest.hashCode|hashCode(){}[0]
+    final fun toString(): kotlin/String // io.github.darkryh.yukitoki.manager/DownloadRequest.toString|toString(){}[0]
+}
+
+final class io.github.darkryh.yukitoki.manager/DownloadSnapshot { // io.github.darkryh.yukitoki.manager/DownloadSnapshot|null[0]
+    constructor <init>(io.github.darkryh.yukitoki.manager/DownloadId, io.github.darkryh.yukitoki.manager/DownloadRequest, io.github.darkryh.yukitoki.manager/DownloadState, kotlin/Int, kotlin/Int?, okio/Path?) // io.github.darkryh.yukitoki.manager/DownloadSnapshot.<init>|<init>(io.github.darkryh.yukitoki.manager.DownloadId;io.github.darkryh.yukitoki.manager.DownloadRequest;io.github.darkryh.yukitoki.manager.DownloadState;kotlin.Int;kotlin.Int?;okio.Path?){}[0]
+
+    final val attempts // io.github.darkryh.yukitoki.manager/DownloadSnapshot.attempts|{}attempts[0]
+        final fun <get-attempts>(): kotlin/Int // io.github.darkryh.yukitoki.manager/DownloadSnapshot.attempts.<get-attempts>|<get-attempts>(){}[0]
+    final val id // io.github.darkryh.yukitoki.manager/DownloadSnapshot.id|{}id[0]
+        final fun <get-id>(): io.github.darkryh.yukitoki.manager/DownloadId // io.github.darkryh.yukitoki.manager/DownloadSnapshot.id.<get-id>|<get-id>(){}[0]
+    final val queuePosition // io.github.darkryh.yukitoki.manager/DownloadSnapshot.queuePosition|{}queuePosition[0]
+        final fun <get-queuePosition>(): kotlin/Int? // io.github.darkryh.yukitoki.manager/DownloadSnapshot.queuePosition.<get-queuePosition>|<get-queuePosition>(){}[0]
+    final val request // io.github.darkryh.yukitoki.manager/DownloadSnapshot.request|{}request[0]
+        final fun <get-request>(): io.github.darkryh.yukitoki.manager/DownloadRequest // io.github.darkryh.yukitoki.manager/DownloadSnapshot.request.<get-request>|<get-request>(){}[0]
+    final val resolvedDestination // io.github.darkryh.yukitoki.manager/DownloadSnapshot.resolvedDestination|{}resolvedDestination[0]
+        final fun <get-resolvedDestination>(): okio/Path? // io.github.darkryh.yukitoki.manager/DownloadSnapshot.resolvedDestination.<get-resolvedDestination>|<get-resolvedDestination>(){}[0]
+    final val state // io.github.darkryh.yukitoki.manager/DownloadSnapshot.state|{}state[0]
+        final fun <get-state>(): io.github.darkryh.yukitoki.manager/DownloadState // io.github.darkryh.yukitoki.manager/DownloadSnapshot.state.<get-state>|<get-state>(){}[0]
+
+    final fun component1(): io.github.darkryh.yukitoki.manager/DownloadId // io.github.darkryh.yukitoki.manager/DownloadSnapshot.component1|component1(){}[0]
+    final fun component2(): io.github.darkryh.yukitoki.manager/DownloadRequest // io.github.darkryh.yukitoki.manager/DownloadSnapshot.component2|component2(){}[0]
+    final fun component3(): io.github.darkryh.yukitoki.manager/DownloadState // io.github.darkryh.yukitoki.manager/DownloadSnapshot.component3|component3(){}[0]
+    final fun component4(): kotlin/Int // io.github.darkryh.yukitoki.manager/DownloadSnapshot.component4|component4(){}[0]
+    final fun component5(): kotlin/Int? // io.github.darkryh.yukitoki.manager/DownloadSnapshot.component5|component5(){}[0]
+    final fun component6(): okio/Path? // io.github.darkryh.yukitoki.manager/DownloadSnapshot.component6|component6(){}[0]
+    final fun copy(io.github.darkryh.yukitoki.manager/DownloadId = ..., io.github.darkryh.yukitoki.manager/DownloadRequest = ..., io.github.darkryh.yukitoki.manager/DownloadState = ..., kotlin/Int = ..., kotlin/Int? = ..., okio/Path? = ...): io.github.darkryh.yukitoki.manager/DownloadSnapshot // io.github.darkryh.yukitoki.manager/DownloadSnapshot.copy|copy(io.github.darkryh.yukitoki.manager.DownloadId;io.github.darkryh.yukitoki.manager.DownloadRequest;io.github.darkryh.yukitoki.manager.DownloadState;kotlin.Int;kotlin.Int?;okio.Path?){}[0]
+    final fun equals(kotlin/Any?): kotlin/Boolean // io.github.darkryh.yukitoki.manager/DownloadSnapshot.equals|equals(kotlin.Any?){}[0]
+    final fun hashCode(): kotlin/Int // io.github.darkryh.yukitoki.manager/DownloadSnapshot.hashCode|hashCode(){}[0]
+    final fun toString(): kotlin/String // io.github.darkryh.yukitoki.manager/DownloadSnapshot.toString|toString(){}[0]
+}
+
+final class io.github.darkryh.yukitoki.manager/DownloadSuccess { // io.github.darkryh.yukitoki.manager/DownloadSuccess|null[0]
+    constructor <init>(okio/Path, kotlin/Long, kotlin/Long?) // io.github.darkryh.yukitoki.manager/DownloadSuccess.<init>|<init>(okio.Path;kotlin.Long;kotlin.Long?){}[0]
+
+    final val bytesDownloaded // io.github.darkryh.yukitoki.manager/DownloadSuccess.bytesDownloaded|{}bytesDownloaded[0]
+        final fun <get-bytesDownloaded>(): kotlin/Long // io.github.darkryh.yukitoki.manager/DownloadSuccess.bytesDownloaded.<get-bytesDownloaded>|<get-bytesDownloaded>(){}[0]
+    final val finalPath // io.github.darkryh.yukitoki.manager/DownloadSuccess.finalPath|{}finalPath[0]
+        final fun <get-finalPath>(): okio/Path // io.github.darkryh.yukitoki.manager/DownloadSuccess.finalPath.<get-finalPath>|<get-finalPath>(){}[0]
+    final val totalBytes // io.github.darkryh.yukitoki.manager/DownloadSuccess.totalBytes|{}totalBytes[0]
+        final fun <get-totalBytes>(): kotlin/Long? // io.github.darkryh.yukitoki.manager/DownloadSuccess.totalBytes.<get-totalBytes>|<get-totalBytes>(){}[0]
+
+    final fun component1(): okio/Path // io.github.darkryh.yukitoki.manager/DownloadSuccess.component1|component1(){}[0]
+    final fun component2(): kotlin/Long // io.github.darkryh.yukitoki.manager/DownloadSuccess.component2|component2(){}[0]
+    final fun component3(): kotlin/Long? // io.github.darkryh.yukitoki.manager/DownloadSuccess.component3|component3(){}[0]
+    final fun copy(okio/Path = ..., kotlin/Long = ..., kotlin/Long? = ...): io.github.darkryh.yukitoki.manager/DownloadSuccess // io.github.darkryh.yukitoki.manager/DownloadSuccess.copy|copy(okio.Path;kotlin.Long;kotlin.Long?){}[0]
+    final fun equals(kotlin/Any?): kotlin/Boolean // io.github.darkryh.yukitoki.manager/DownloadSuccess.equals|equals(kotlin.Any?){}[0]
+    final fun hashCode(): kotlin/Int // io.github.darkryh.yukitoki.manager/DownloadSuccess.hashCode|hashCode(){}[0]
+    final fun toString(): kotlin/String // io.github.darkryh.yukitoki.manager/DownloadSuccess.toString|toString(){}[0]
+}
+
+final class io.github.darkryh.yukitoki.manager/ProgressGranularity { // io.github.darkryh.yukitoki.manager/ProgressGranularity|null[0]
+    constructor <init>(kotlin/Long = ..., kotlin.time/Duration = ...) // io.github.darkryh.yukitoki.manager/ProgressGranularity.<init>|<init>(kotlin.Long;kotlin.time.Duration){}[0]
+
+    final val minBytesDelta // io.github.darkryh.yukitoki.manager/ProgressGranularity.minBytesDelta|{}minBytesDelta[0]
+        final fun <get-minBytesDelta>(): kotlin/Long // io.github.darkryh.yukitoki.manager/ProgressGranularity.minBytesDelta.<get-minBytesDelta>|<get-minBytesDelta>(){}[0]
+    final val minInterval // io.github.darkryh.yukitoki.manager/ProgressGranularity.minInterval|{}minInterval[0]
+        final fun <get-minInterval>(): kotlin.time/Duration // io.github.darkryh.yukitoki.manager/ProgressGranularity.minInterval.<get-minInterval>|<get-minInterval>(){}[0]
+
+    final fun component1(): kotlin/Long // io.github.darkryh.yukitoki.manager/ProgressGranularity.component1|component1(){}[0]
+    final fun component2(): kotlin.time/Duration // io.github.darkryh.yukitoki.manager/ProgressGranularity.component2|component2(){}[0]
+    final fun copy(kotlin/Long = ..., kotlin.time/Duration = ...): io.github.darkryh.yukitoki.manager/ProgressGranularity // io.github.darkryh.yukitoki.manager/ProgressGranularity.copy|copy(kotlin.Long;kotlin.time.Duration){}[0]
+    final fun equals(kotlin/Any?): kotlin/Boolean // io.github.darkryh.yukitoki.manager/ProgressGranularity.equals|equals(kotlin.Any?){}[0]
+    final fun hashCode(): kotlin/Int // io.github.darkryh.yukitoki.manager/ProgressGranularity.hashCode|hashCode(){}[0]
+    final fun toString(): kotlin/String // io.github.darkryh.yukitoki.manager/ProgressGranularity.toString|toString(){}[0]
+}
+
+final class io.github.darkryh.yukitoki.manager/RetryPolicy { // io.github.darkryh.yukitoki.manager/RetryPolicy|null[0]
+    constructor <init>(kotlin/Int, kotlin.time/Duration, kotlin.time/Duration, kotlin/Double, kotlin/Double, kotlin/Boolean = ..., kotlin/Boolean = ..., kotlin/Boolean = ...) // io.github.darkryh.yukitoki.manager/RetryPolicy.<init>|<init>(kotlin.Int;kotlin.time.Duration;kotlin.time.Duration;kotlin.Double;kotlin.Double;kotlin.Boolean;kotlin.Boolean;kotlin.Boolean){}[0]
+
+    final val initialDelay // io.github.darkryh.yukitoki.manager/RetryPolicy.initialDelay|{}initialDelay[0]
+        final fun <get-initialDelay>(): kotlin.time/Duration // io.github.darkryh.yukitoki.manager/RetryPolicy.initialDelay.<get-initialDelay>|<get-initialDelay>(){}[0]
+    final val jitterRatio // io.github.darkryh.yukitoki.manager/RetryPolicy.jitterRatio|{}jitterRatio[0]
+        final fun <get-jitterRatio>(): kotlin/Double // io.github.darkryh.yukitoki.manager/RetryPolicy.jitterRatio.<get-jitterRatio>|<get-jitterRatio>(){}[0]
+    final val maxAttempts // io.github.darkryh.yukitoki.manager/RetryPolicy.maxAttempts|{}maxAttempts[0]
+        final fun <get-maxAttempts>(): kotlin/Int // io.github.darkryh.yukitoki.manager/RetryPolicy.maxAttempts.<get-maxAttempts>|<get-maxAttempts>(){}[0]
+    final val maxDelay // io.github.darkryh.yukitoki.manager/RetryPolicy.maxDelay|{}maxDelay[0]
+        final fun <get-maxDelay>(): kotlin.time/Duration // io.github.darkryh.yukitoki.manager/RetryPolicy.maxDelay.<get-maxDelay>|<get-maxDelay>(){}[0]
+    final val multiplier // io.github.darkryh.yukitoki.manager/RetryPolicy.multiplier|{}multiplier[0]
+        final fun <get-multiplier>(): kotlin/Double // io.github.darkryh.yukitoki.manager/RetryPolicy.multiplier.<get-multiplier>|<get-multiplier>(){}[0]
+    final val retryOnHttp408 // io.github.darkryh.yukitoki.manager/RetryPolicy.retryOnHttp408|{}retryOnHttp408[0]
+        final fun <get-retryOnHttp408>(): kotlin/Boolean // io.github.darkryh.yukitoki.manager/RetryPolicy.retryOnHttp408.<get-retryOnHttp408>|<get-retryOnHttp408>(){}[0]
+    final val retryOnHttp429 // io.github.darkryh.yukitoki.manager/RetryPolicy.retryOnHttp429|{}retryOnHttp429[0]
+        final fun <get-retryOnHttp429>(): kotlin/Boolean // io.github.darkryh.yukitoki.manager/RetryPolicy.retryOnHttp429.<get-retryOnHttp429>|<get-retryOnHttp429>(){}[0]
+    final val retryOnHttp5xx // io.github.darkryh.yukitoki.manager/RetryPolicy.retryOnHttp5xx|{}retryOnHttp5xx[0]
+        final fun <get-retryOnHttp5xx>(): kotlin/Boolean // io.github.darkryh.yukitoki.manager/RetryPolicy.retryOnHttp5xx.<get-retryOnHttp5xx>|<get-retryOnHttp5xx>(){}[0]
+
+    final fun component1(): kotlin/Int // io.github.darkryh.yukitoki.manager/RetryPolicy.component1|component1(){}[0]
+    final fun component2(): kotlin.time/Duration // io.github.darkryh.yukitoki.manager/RetryPolicy.component2|component2(){}[0]
+    final fun component3(): kotlin.time/Duration // io.github.darkryh.yukitoki.manager/RetryPolicy.component3|component3(){}[0]
+    final fun component4(): kotlin/Double // io.github.darkryh.yukitoki.manager/RetryPolicy.component4|component4(){}[0]
+    final fun component5(): kotlin/Double // io.github.darkryh.yukitoki.manager/RetryPolicy.component5|component5(){}[0]
+    final fun component6(): kotlin/Boolean // io.github.darkryh.yukitoki.manager/RetryPolicy.component6|component6(){}[0]
+    final fun component7(): kotlin/Boolean // io.github.darkryh.yukitoki.manager/RetryPolicy.component7|component7(){}[0]
+    final fun component8(): kotlin/Boolean // io.github.darkryh.yukitoki.manager/RetryPolicy.component8|component8(){}[0]
+    final fun copy(kotlin/Int = ..., kotlin.time/Duration = ..., kotlin.time/Duration = ..., kotlin/Double = ..., kotlin/Double = ..., kotlin/Boolean = ..., kotlin/Boolean = ..., kotlin/Boolean = ...): io.github.darkryh.yukitoki.manager/RetryPolicy // io.github.darkryh.yukitoki.manager/RetryPolicy.copy|copy(kotlin.Int;kotlin.time.Duration;kotlin.time.Duration;kotlin.Double;kotlin.Double;kotlin.Boolean;kotlin.Boolean;kotlin.Boolean){}[0]
+    final fun equals(kotlin/Any?): kotlin/Boolean // io.github.darkryh.yukitoki.manager/RetryPolicy.equals|equals(kotlin.Any?){}[0]
+    final fun hashCode(): kotlin/Int // io.github.darkryh.yukitoki.manager/RetryPolicy.hashCode|hashCode(){}[0]
+    final fun toString(): kotlin/String // io.github.darkryh.yukitoki.manager/RetryPolicy.toString|toString(){}[0]
+
+    final object Companion { // io.github.darkryh.yukitoki.manager/RetryPolicy.Companion|null[0]
+        final val Default // io.github.darkryh.yukitoki.manager/RetryPolicy.Companion.Default|{}Default[0]
+            final fun <get-Default>(): io.github.darkryh.yukitoki.manager/RetryPolicy // io.github.darkryh.yukitoki.manager/RetryPolicy.Companion.Default.<get-Default>|<get-Default>(){}[0]
+        final val None // io.github.darkryh.yukitoki.manager/RetryPolicy.Companion.None|{}None[0]
+            final fun <get-None>(): io.github.darkryh.yukitoki.manager/RetryPolicy // io.github.darkryh.yukitoki.manager/RetryPolicy.Companion.None.<get-None>|<get-None>(){}[0]
+    }
+}
+
+final value class io.github.darkryh.yukitoki.manager/DownloadId { // io.github.darkryh.yukitoki.manager/DownloadId|null[0]
+    constructor <init>(kotlin/String) // io.github.darkryh.yukitoki.manager/DownloadId.<init>|<init>(kotlin.String){}[0]
+
+    final val value // io.github.darkryh.yukitoki.manager/DownloadId.value|{}value[0]
+        final fun <get-value>(): kotlin/String // io.github.darkryh.yukitoki.manager/DownloadId.value.<get-value>|<get-value>(){}[0]
+
+    final fun equals(kotlin/Any?): kotlin/Boolean // io.github.darkryh.yukitoki.manager/DownloadId.equals|equals(kotlin.Any?){}[0]
+    final fun hashCode(): kotlin/Int // io.github.darkryh.yukitoki.manager/DownloadId.hashCode|hashCode(){}[0]
+    final fun toString(): kotlin/String // io.github.darkryh.yukitoki.manager/DownloadId.toString|toString(){}[0]
+
+    final object Companion { // io.github.darkryh.yukitoki.manager/DownloadId.Companion|null[0]
+        final fun new(): io.github.darkryh.yukitoki.manager/DownloadId // io.github.darkryh.yukitoki.manager/DownloadId.Companion.new|new(){}[0]
+    }
+}
+
+final object io.github.darkryh.yukitoki.manager/DownloadIntents { // io.github.darkryh.yukitoki.manager/DownloadIntents|null[0]
+    final val isSupported // io.github.darkryh.yukitoki.manager/DownloadIntents.isSupported|{}isSupported[0]
+        final fun <get-isSupported>(): kotlin/Boolean // io.github.darkryh.yukitoki.manager/DownloadIntents.isSupported.<get-isSupported>|<get-isSupported>(){}[0]
+
+    final suspend fun dispatch(io.github.darkryh.yukitoki.manager/DownloadIntentRequest): io.github.darkryh.yukitoki.manager/DownloadIntentResult // io.github.darkryh.yukitoki.manager/DownloadIntents.dispatch|dispatch(io.github.darkryh.yukitoki.manager.DownloadIntentRequest){}[0]
+}
+
+final object io.github.darkryh.yukitoki.manager/DownloadLocations { // io.github.darkryh.yukitoki.manager/DownloadLocations|null[0]
+    final val downloads // io.github.darkryh.yukitoki.manager/DownloadLocations.downloads|{}downloads[0]
+        final fun <get-downloads>(): okio/Path // io.github.darkryh.yukitoki.manager/DownloadLocations.downloads.<get-downloads>|<get-downloads>(){}[0]
+    final val isSupported // io.github.darkryh.yukitoki.manager/DownloadLocations.isSupported|{}isSupported[0]
+        final fun <get-isSupported>(): kotlin/Boolean // io.github.darkryh.yukitoki.manager/DownloadLocations.isSupported.<get-isSupported>|<get-isSupported>(){}[0]
+}
