@@ -205,7 +205,13 @@ class DefaultDownloadManagerTest {
     @Test
     fun `pause queued then resume`() = runTest {
         val payload = "ok".encodeToByteArray()
-        val engine = MockEngine { respond(payload, HttpStatusCode.OK) }
+        val releaseFirstDownload = CompletableDeferred<Unit>()
+        val engine = MockEngine { request ->
+            if (request.url.encodedPath.endsWith("/1")) {
+                releaseFirstDownload.await()
+            }
+            respond(payload, HttpStatusCode.OK)
+        }
         val client = HttpClient(engine)
         val fs = FakeFileSystem()
         val manager = testManager(client, fs, DownloadManagerConfig(concurrency = DownloadConcurrency.Fixed(1)))
@@ -214,15 +220,17 @@ class DefaultDownloadManagerTest {
         manager.submitInternal(
             DownloadCommand.Enqueue(id = id1, request = DownloadRequest("https://x/1", "/tmp/1.bin".toPath()))
         )
+        runCurrent()
         manager.submitInternal(
             DownloadCommand.Enqueue(id = id2, request = DownloadRequest("https://x/2", "/tmp/2.bin".toPath()))
         )
         val pauseAck = manager.submitInternal(DownloadCommand.Pause(id2))
         assertIs<CommandResult.Accepted>(pauseAck)
         val pauseState = manager.state.value.snapshots[id2]?.state
-        assertTrue(pauseState is DownloadState.Paused || pauseState is DownloadState.Queued)
-        manager.submitInternal(DownloadCommand.Resume(id2))
+        assertIs<DownloadState.Paused>(pauseState)
+        assertIs<CommandResult.Accepted>(manager.submitInternal(DownloadCommand.Resume(id2)))
 
+        releaseFirstDownload.complete(Unit)
         assertIs<DownloadResult.Success>(manager.await(id1))
         assertIs<DownloadResult.Success>(manager.await(id2))
         manager.shutdown()
