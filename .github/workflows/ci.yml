@@ -7,6 +7,13 @@ on:
   push:
     branches:
       - master
+  workflow_call:
+    inputs:
+      version:
+        description: Version used while validating a release tag
+        required: false
+        type: string
+        default: 1.0.0-SNAPSHOT
 
 permissions:
   contents: read
@@ -15,9 +22,101 @@ concurrency:
   group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
+env:
+  ORG_GRADLE_PROJECT_yukitokiVersion: ${{ inputs.version || '1.0.0-SNAPSHOT' }}
+
 jobs:
-  validate:
-    name: Validate
+  jvm-gate:
+    name: JVM gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up JDK
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: ${{ github.event_name == 'pull_request' }}
+
+      - name: Run JVM behavior and end-to-end tests
+        run: ./gradlew --no-daemon --stacktrace :download-manager:jvmTest
+
+  validate-platforms:
+    name: Android, Wasm, Desktop, and publications
+    needs: jvm-gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up JDK
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: ${{ github.event_name == 'pull_request' }}
+
+      - name: Validate Android, Wasm, Desktop, and publication descriptors
+        run: >-
+          ./gradlew --no-daemon --stacktrace
+          :download-manager:testAndroidHostTest
+          :download-manager:bundleAndroidMainAar
+          :download-manager:wasmJsBrowserTest
+          :download-manager:wasmJsJar
+          :sample:composeApp:compileKotlinDesktop
+          :sample:androidApp:assembleDebug
+          :download-manager:generateMetadataFileForKotlinMultiplatformPublication
+          :download-manager:generatePomFileForAndroidPublication
+          :download-manager:generatePomFileForJvmPublication
+          :download-manager:generatePomFileForIosArm64Publication
+          :download-manager:generatePomFileForIosX64Publication
+          :download-manager:generatePomFileForIosSimulatorArm64Publication
+          :download-manager:generatePomFileForWasmJsPublication
+          :download-manager:generatePomFileForKotlinMultiplatformPublication
+
+  validate-windows:
+    name: JVM portability on Windows
+    needs: jvm-gate
+    runs-on: windows-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up JDK
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: ${{ github.event_name == 'pull_request' }}
+
+      - name: Run JVM tests on Windows
+        run: ./gradlew --no-daemon --stacktrace :download-manager:jvmTest
+
+  validate-apple:
+    name: Apple targets and ABI
+    needs:
+      - validate-platforms
+      - validate-windows
     runs-on: macos-latest
     timeout-minutes: 60
 
@@ -36,5 +135,42 @@ jobs:
         with:
           cache-read-only: ${{ github.event_name == 'pull_request' }}
 
-      - name: Validate library and samples
-        run: ./gradlew --no-daemon --stacktrace :download-manager:allTests :download-manager:build :sample:composeApp:compileAndroidMain :sample:androidApp:assembleDebug
+      - name: Validate iOS, Apple artifacts, sample integration, and ABI
+        run: >-
+          ./gradlew --no-daemon --stacktrace
+          :download-manager:iosSimulatorArm64Test
+          :download-manager:compileTestKotlinIosArm64
+          :download-manager:compileTestKotlinIosX64
+          :download-manager:linkReleaseFrameworkIosArm64
+          :download-manager:linkReleaseFrameworkIosX64
+          :download-manager:linkReleaseFrameworkIosSimulatorArm64
+          :sample:composeApp:linkDebugFrameworkIosSimulatorArm64
+          :download-manager:checkKotlinAbi
+
+  validate-complete:
+    name: Validate
+    if: ${{ always() }}
+    needs:
+      - jvm-gate
+      - validate-platforms
+      - validate-windows
+      - validate-apple
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Require every validation stage to succeed
+        env:
+          JVM_GATE_RESULT: ${{ needs.jvm-gate.result }}
+          PLATFORMS_RESULT: ${{ needs.validate-platforms.result }}
+          WINDOWS_RESULT: ${{ needs.validate-windows.result }}
+          APPLE_RESULT: ${{ needs.validate-apple.result }}
+        shell: bash
+        run: |
+          if [[ "${JVM_GATE_RESULT}" != "success" ||
+                "${PLATFORMS_RESULT}" != "success" ||
+                "${WINDOWS_RESULT}" != "success" ||
+                "${APPLE_RESULT}" != "success" ]]; then
+            echo "One or more validation stages did not succeed." >&2
+            exit 1
+          fi

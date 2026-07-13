@@ -1,17 +1,19 @@
 package io.github.darkryh.yukitoki.manager
 
 import io.ktor.http.Headers
-import io.ktor.http.HttpMethod
 import io.ktor.http.Url
 import okio.Path
 import kotlin.jvm.JvmInline
 import kotlin.random.Random
 import kotlin.time.Clock
+import kotlin.time.Duration
+import kotlin.time.Duration.Companion.milliseconds
+import kotlin.time.Duration.Companion.seconds
 
 @JvmInline
-value class DownloadId(val value: String) {
-    companion object {
-        fun new(): DownloadId {
+public value class DownloadId(public val value: String) {
+    public companion object {
+        public fun new(): DownloadId {
             val now = Clock.System.now().toEpochMilliseconds()
             val random = Random.nextLong().toULong().toString(16)
             return DownloadId("dl-$now-$random")
@@ -19,50 +21,66 @@ value class DownloadId(val value: String) {
     }
 }
 
-data class DownloadRequest(
-    val url: String,
-    val destinationPath: Path? = null,
-    val fileName: String? = null,
-    val method: HttpMethod = HttpMethod.Get,
-    val headers: Headers = Headers.Empty,
-    val overwritePolicy: OverwritePolicy = OverwritePolicy.REPLACE,
-    val retryPolicy: RetryPolicy = RetryPolicy.default(),
-    val expectedSizeBytes: Long? = null,
-    val progressGranularity: ProgressGranularity = ProgressGranularity(),
-    val priority: DownloadPriority = DownloadPriority.NORMAL,
-    val segmentation: DownloadSegmentation = DownloadSegmentation.Auto,
-    val expectedChecksum: ChecksumSpec? = null,
+public data class DownloadRequest(
+    public val url: String,
+    public val destination: DownloadDestination = DownloadDestination.Default,
+    public val headers: Headers = Headers.Empty,
+    public val overwritePolicy: OverwritePolicy = OverwritePolicy.DEFAULT,
+    public val retryPolicy: RetryPolicy = RetryPolicy.Default,
+    public val expectedSizeBytes: Long? = null,
+    public val progressGranularity: ProgressGranularity = ProgressGranularity(),
+    public val priority: DownloadPriority = DownloadPriority.NORMAL,
+    public val segmentation: DownloadSegmentation = DownloadSegmentation.Auto,
+    public val expectedChecksum: ChecksumSpec? = null,
 ) {
     init {
         require(url.isNotBlank()) { "url must not be blank" }
         validateDownloadUrl(url)
-        fileName?.let(::validateDownloadFileName)
+        (destination as? DownloadDestination.Directory)?.fileName?.let(::validateDownloadFileName)
         require(expectedSizeBytes == null || expectedSizeBytes >= 0L) { "expectedSizeBytes must be >= 0" }
     }
 }
 
-sealed interface DownloadSegmentation {
+public sealed interface DownloadDestination {
+    /** Use [DownloadLocations.downloads] and infer a safe file name from the URL. */
+    public data object Default : DownloadDestination
+
+    /** Save in [path], optionally overriding the URL-derived file name. */
+    public data class Directory(
+        val path: Path,
+        val fileName: String? = null,
+    ) : DownloadDestination {
+        init {
+            fileName?.let(::validateDownloadFileName)
+        }
+    }
+
+    /** Save at this exact file path. */
+    public data class File(val path: Path) : DownloadDestination
+}
+
+public sealed interface DownloadSegmentation {
     /**
      * Let the manager decide whether a file should use HTTP byte-range workers.
      * Small files stay single-stream; larger files use bounded parallel ranges only
      * when the server advertises safe range support.
      */
-    data object Auto : DownloadSegmentation
+    public data object Auto : DownloadSegmentation
 
     /** Force the simple single-stream path. This is the safest option for unusual servers. */
-    data object SingleStream : DownloadSegmentation
+    public data object Single : DownloadSegmentation
 
     /** Cap per-file range workers. The manager may still fall back to single-stream. */
-    data class Fixed(val segments: Int) : DownloadSegmentation {
+    public data class MaxSegments(val segments: Int) : DownloadSegmentation {
         init {
             require(segments >= 1) { "segments must be >= 1" }
         }
     }
 }
 
-data class ChecksumSpec(
-    val algorithm: ChecksumAlgorithm,
-    val expectedHex: String,
+public data class ChecksumSpec(
+    public val algorithm: ChecksumAlgorithm,
+    public val expectedHex: String,
 ) {
     init {
         val expectedLength = when (algorithm) {
@@ -78,175 +96,204 @@ data class ChecksumSpec(
     }
 }
 
-enum class ChecksumAlgorithm {
+public enum class ChecksumAlgorithm {
     MD5,
     SHA_256,
 }
 
-enum class DownloadPriority {
+public enum class DownloadPriority {
     HIGH,
     NORMAL,
     LOW,
 }
 
-enum class OverwritePolicy {
+public enum class OverwritePolicy {
+    /** Rename for default/directory destinations; fail on collision for an exact file. */
+    DEFAULT,
     FAIL_IF_EXISTS,
     REPLACE,
     RENAME_UNIQUE,
 }
 
-data class RetryPolicy(
-    val maxAttempts: Int,
-    val initialDelayMs: Long,
-    val maxDelayMs: Long,
-    val multiplier: Double,
-    val jitterRatio: Double,
-    val retryOnHttp5xx: Boolean = true,
-    val retryOnHttp408: Boolean = true,
-    val retryOnHttp429: Boolean = true,
+public data class RetryPolicy(
+    public val maxAttempts: Int,
+    public val initialDelay: Duration,
+    public val maxDelay: Duration,
+    public val multiplier: Double,
+    public val jitterRatio: Double,
+    public val retryOnHttp5xx: Boolean = true,
+    public val retryOnHttp408: Boolean = true,
+    public val retryOnHttp429: Boolean = true,
 ) {
     init {
         require(maxAttempts >= 1) { "maxAttempts must be >= 1" }
-        require(initialDelayMs >= 0) { "initialDelayMs must be >= 0" }
-        require(maxDelayMs >= initialDelayMs) { "maxDelayMs must be >= initialDelayMs" }
+        require(!initialDelay.isNegative()) { "initialDelay must be >= 0" }
+        require(maxDelay >= initialDelay) { "maxDelay must be >= initialDelay" }
         require(multiplier >= 1.0) { "multiplier must be >= 1.0" }
         require(jitterRatio in 0.0..1.0) { "jitterRatio must be in [0,1]" }
     }
 
-    companion object {
-        fun default(): RetryPolicy = RetryPolicy(
+    public companion object {
+        public val Default: RetryPolicy = RetryPolicy(
             maxAttempts = 3,
-            initialDelayMs = 500,
-            maxDelayMs = 8_000,
+            initialDelay = 500.milliseconds,
+            maxDelay = 8.seconds,
             multiplier = 2.0,
             jitterRatio = 0.2,
+        )
+
+        public val None: RetryPolicy = RetryPolicy(
+            maxAttempts = 1,
+            initialDelay = Duration.ZERO,
+            maxDelay = Duration.ZERO,
+            multiplier = 1.0,
+            jitterRatio = 0.0,
+            retryOnHttp5xx = false,
+            retryOnHttp408 = false,
+            retryOnHttp429 = false,
         )
     }
 }
 
-data class ProgressGranularity(
-    val minBytesDelta: Long = 64 * 1024,
-    val minMillisDelta: Long = 150,
+public data class ProgressGranularity(
+    public val minBytesDelta: Long = 64 * 1024,
+    public val minInterval: Duration = 150.milliseconds,
 ) {
     init {
         require(minBytesDelta >= 0L) { "minBytesDelta must be >= 0" }
-        require(minMillisDelta >= 0L) { "minMillisDelta must be >= 0" }
+        require(!minInterval.isNegative()) { "minInterval must be >= 0" }
     }
 }
 
-data class DownloadManagerConfig(
-    val concurrency: DownloadConcurrency = DownloadConcurrency.Auto,
-    val bufferSizeBytes: Int = 64 * 1024,
-    val deletePartialOnFailure: Boolean = true,
-    val deletePartialOnCancel: Boolean = true,
+public data class DownloadManagerConfig(
+    public val concurrency: DownloadConcurrency = DownloadConcurrency.Default,
+    public val bufferSizeBytes: Int = 64 * 1024,
+    public val deletePartialOnFailure: Boolean = true,
+    public val deletePartialOnCancel: Boolean = true,
     /**
-     * Per-attempt idle timeout: if no bytes arrive on the stream for this many
-     * milliseconds the attempt fails with [DownloadFailure.Timeout] (and may retry).
-     * Set to 0 to disable. This guards against stalled sockets independently of the
+     * Per-attempt idle timeout: if no bytes arrive during this duration, the attempt
+     * fails with [DownloadFailure.Timeout] (and may retry). Set to [Duration.ZERO] to
+     * disable it. This guards against stalled sockets independently of the
      * caller's [io.ktor.client.HttpClient] timeout configuration.
-    */
-    val idleTimeoutMs: Long = 30_000,
+     */
+    public val idleTimeout: Duration = 30.seconds,
+    /** Maximum finished entries retained in [DownloadManager.state]. Zero retains none. */
+    public val maxRetainedFinished: Int = 100,
 ) {
     init {
         require(bufferSizeBytes >= 4 * 1024) { "bufferSizeBytes must be >= 4KB" }
-        require(idleTimeoutMs >= 0) { "idleTimeoutMs must be >= 0 (0 disables)" }
+        require(!idleTimeout.isNegative()) { "idleTimeout must be >= 0 (zero disables)" }
+        require(maxRetainedFinished >= 0) { "maxRetainedFinished must be >= 0" }
     }
 }
 
-sealed interface DownloadConcurrency {
-    data object Auto : DownloadConcurrency
-    data class Fixed(val downloads: Int) : DownloadConcurrency {
+public sealed interface DownloadConcurrency {
+    public data object Default : DownloadConcurrency
+    public data class Fixed(val downloads: Int) : DownloadConcurrency {
         init {
             require(downloads >= 1) { "downloads must be >= 1" }
         }
     }
 }
 
-data class DownloadProgress(
-    val bytesDownloaded: Long,
-    val totalBytes: Long?,
-    val speedBytesPerSecond: Long?,
-    val etaMillis: Long?,
+public data class DownloadProgress(
+    public val bytesDownloaded: Long,
+    public val totalBytes: Long?,
+    public val speedBytesPerSecond: Long?,
+    public val eta: Duration?,
 ) {
-    val fraction: Double?
+    public val fraction: Double?
         get() = totalBytes?.takeIf { it > 0 }?.let { bytesDownloaded.toDouble() / it.toDouble() }
 }
 
-sealed interface DownloadState {
-    data object Queued : DownloadState
-    data object Starting : DownloadState
-    data class Running(val progress: DownloadProgress) : DownloadState
-    data object Pausing : DownloadState
-    data object Paused : DownloadState
-    data object Cancelling : DownloadState
-    data object Cancelled : DownloadState
-    data class Succeeded(val result: DownloadSuccess) : DownloadState
-    data class Failed(val failure: DownloadFailure) : DownloadState
+public sealed interface DownloadState {
+    public data object Queued : DownloadState
+    public data object Starting : DownloadState
+    public data class Running(val progress: DownloadProgress) : DownloadState
+    public data object Pausing : DownloadState
+    public data object Paused : DownloadState
+    public data object Cancelling : DownloadState
+    public data object Cancelled : DownloadState
+    public data class Succeeded(val result: DownloadSuccess) : DownloadState
+    public data class Failed(val failure: DownloadFailure) : DownloadState
 }
 
-data class DownloadSuccess(
-    val finalPath: Path,
-    val bytesDownloaded: Long,
-    val totalBytes: Long?,
+public data class DownloadSuccess(
+    public val finalPath: Path,
+    public val bytesDownloaded: Long,
+    public val totalBytes: Long?,
 )
 
-sealed interface DownloadFailure {
-    data class HttpStatus(
+public sealed interface DownloadFailure {
+    public data class HttpStatus(
         val code: Int,
         val message: String? = null,
-        val retryAfterMillis: Long? = null,
+        val retryAfter: Duration? = null,
     ) : DownloadFailure
-    data class Network(val message: String) : DownloadFailure
-    data class Timeout(val message: String) : DownloadFailure
-    data class PermissionDenied(val path: Path? = null, val message: String? = null) : DownloadFailure
-    data class NoSpace(val path: Path? = null, val message: String? = null) : DownloadFailure
-    data class AlreadyExists(val path: Path? = null, val message: String? = null) : DownloadFailure
-    data class FileSystem(val message: String) : DownloadFailure
-    data class IntegrityMismatch(val expectedSize: Long, val actualSize: Long) : DownloadFailure
-    data class ChecksumMismatch(val expectedHex: String, val actualHex: String) : DownloadFailure
-    data class ServerChanged(val message: String) : DownloadFailure
-    data object CancelledByUser : DownloadFailure
-    data class Unknown(val message: String) : DownloadFailure
+    public data class Network(val message: String) : DownloadFailure
+    public data class Timeout(val message: String) : DownloadFailure
+    public data class PermissionDenied(val path: Path? = null, val message: String? = null) : DownloadFailure
+    public data class NoSpace(val path: Path? = null, val message: String? = null) : DownloadFailure
+    public data class AlreadyExists(val path: Path? = null, val message: String? = null) : DownloadFailure
+    public data class FileSystem(val message: String) : DownloadFailure
+    public data class IntegrityMismatch(val expectedSize: Long, val actualSize: Long) : DownloadFailure
+    public data class ChecksumMismatch(val expectedHex: String, val actualHex: String) : DownloadFailure
+    public data class ServerChanged(val message: String) : DownloadFailure
+    public data class Unsupported(val message: String) : DownloadFailure
+    public data class ManagerClosed(val message: String = "Download manager is closed") : DownloadFailure
+    public data class Unexpected(val message: String) : DownloadFailure
 }
 
-data class DownloadSnapshot(
-    val id: DownloadId,
-    val request: DownloadRequest,
-    val state: DownloadState,
-    val attempts: Int,
-    val queuePosition: Int?,
+public data class DownloadSnapshot(
+    public val id: DownloadId,
+    public val request: DownloadRequest,
+    public val state: DownloadState,
+    public val attempts: Int,
+    public val queuePosition: Int?,
+    /** The concrete reserved output path, available after enqueue succeeds. */
+    public val resolvedDestination: Path?,
 )
 
-sealed interface DownloadResult {
-    data class Success(val success: DownloadSuccess) : DownloadResult
-    data class Failure(val failure: DownloadFailure) : DownloadResult
+public sealed interface DownloadResult {
+    public data class Success(val success: DownloadSuccess) : DownloadResult
+    public data object Cancelled : DownloadResult
+    public data class Failure(val failure: DownloadFailure) : DownloadResult
 }
 
-data class DownloadManagerState(
-    val snapshots: Map<DownloadId, DownloadSnapshot>,
-    val pending: List<DownloadId>,
-    val active: Set<DownloadId>,
-    val maxConcurrentDownloads: Int,
+public data class DownloadManagerState(
+    public val snapshots: Map<DownloadId, DownloadSnapshot>,
+    public val pending: List<DownloadId>,
+    public val active: Set<DownloadId>,
+    public val maxConcurrentDownloads: Int,
 )
 
 internal sealed interface DownloadCommand {
-    data class Enqueue(val request: DownloadRequest, val id: DownloadId = DownloadId.new()) : DownloadCommand
-    data class Pause(val id: DownloadId) : DownloadCommand
-    data class Resume(val id: DownloadId) : DownloadCommand
-    data class Cancel(val id: DownloadId) : DownloadCommand
-    data object PauseAll : DownloadCommand
-    data object ResumeAll : DownloadCommand
-    data object CancelAll : DownloadCommand
-    data class Retry(val id: DownloadId) : DownloadCommand
-    data object RetryAllFailed : DownloadCommand
-    data class Move(val id: DownloadId, val newPosition: Int) : DownloadCommand
-    data class SetConcurrency(val concurrency: DownloadConcurrency) : DownloadCommand
+    public data class Enqueue(val request: DownloadRequest, val id: DownloadId = DownloadId.new()) : DownloadCommand
+    public data class Pause(val id: DownloadId) : DownloadCommand
+    public data class Resume(val id: DownloadId) : DownloadCommand
+    public data class Cancel(val id: DownloadId) : DownloadCommand
+    public data object PauseAll : DownloadCommand
+    public data object ResumeAll : DownloadCommand
+    public data object CancelAll : DownloadCommand
+    public data class Retry(val id: DownloadId) : DownloadCommand
+    public data object RetryAllFailed : DownloadCommand
+    public data class MoveWithinPriority(val id: DownloadId, val newPosition: Int) : DownloadCommand
+    public data class Remove(val id: DownloadId, val deleteFile: Boolean) : DownloadCommand
+    public data object ClearFinished : DownloadCommand
+    public data class SetConcurrency(val concurrency: DownloadConcurrency) : DownloadCommand
 }
 
-sealed interface CommandAck {
-    data class Accepted(val id: DownloadId? = null) : CommandAck
-    data class Rejected(val reason: String) : CommandAck
+public sealed interface CommandResult {
+    public data class Accepted(val id: DownloadId? = null) : CommandResult
+    public data class Rejected(
+        val reason: String,
+        val failure: DownloadFailure? = null,
+    ) : CommandResult
 }
+
+public class DownloadRejectedException(
+    public val failure: DownloadFailure,
+) : IllegalStateException(failure.toString())
 
 private fun validateDownloadUrl(url: String) {
     require(uriSchemeRegex.containsMatchIn(url)) { "url must be absolute and include a scheme" }
@@ -276,4 +323,4 @@ private fun validateDownloadFileName(fileName: String) {
 
 private val windowsReservedFileNameChars = setOf('<', '>', ':', '"', '|', '?', '*')
 private val uriSchemeRegex = Regex("^[A-Za-z][A-Za-z0-9+.-]*:")
-private val supportedDownloadRequestSchemes = setOf("http", "https", "data", "blob")
+private val supportedDownloadRequestSchemes = setOf("http", "https")

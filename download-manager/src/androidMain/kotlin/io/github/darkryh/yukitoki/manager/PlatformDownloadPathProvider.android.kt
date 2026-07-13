@@ -4,15 +4,17 @@ import android.os.Environment
 import okio.Path
 import okio.Path.Companion.toPath
 
-actual object PlatformDownloadPathProvider {
+internal actual object PlatformDownloadPathProvider {
+    actual val isSupported: Boolean
+        get() = AndroidDownloadPathContext.get() != null
+
     actual fun defaultDownloadDirectory(): Path {
         val context = AndroidDownloadPathContext.get()
             ?: error(
-                "AndroidDownloadPathContext.register(context) must be called (e.g. in " +
-                    "Application.onCreate) before a download omits an explicit destinationPath, " +
-                    "or set DownloadRequest.destinationPath. Resolving the default Downloads " +
-                    "directory needs an application Context to pick a writable, " +
-                    "scoped-storage-safe location."
+                "Yukitoki's Android initializer did not run. Keep the manifest-merged " +
+                    "YukitokiInitializer enabled, or use an explicit DownloadDestination. " +
+                    "An application Context is required to resolve the scoped-storage-safe " +
+                    "Downloads directory."
             )
         val baseDir = context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS)
             ?: context.filesDir

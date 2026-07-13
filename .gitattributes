@@ -1,0 +1,3 @@
+download-manager/api/*.api -whitespace
+download-manager/api/android/*.api -whitespace
+download-manager/api/jvm/*.api -whitespace

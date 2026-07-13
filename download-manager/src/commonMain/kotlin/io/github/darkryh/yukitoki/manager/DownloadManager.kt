@@ -1,107 +1,133 @@
 package io.github.darkryh.yukitoki.manager
 
-import io.ktor.http.Headers
-import io.ktor.http.HttpMethod
+import io.ktor.client.HttpClient
+import io.ktor.client.HttpClientConfig
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.StateFlow
-import okio.Path
 
-interface DownloadManager {
-    val state: StateFlow<DownloadManagerState>
+public interface DownloadTask {
+    public val id: DownloadId
+    public val state: Flow<DownloadSnapshot?>
 
-    fun observe(downloadId: DownloadId): Flow<DownloadSnapshot?>
-    suspend fun await(downloadId: DownloadId): DownloadResult?
+    public suspend fun await(): DownloadResult
+    public suspend fun pause(): CommandResult
+    public suspend fun resume(): CommandResult
+    public suspend fun cancel(): CommandResult
+    public suspend fun retry(): CommandResult
+}
 
-    suspend fun enqueue(request: DownloadRequest, id: DownloadId = DownloadId.new()): DownloadId
+public interface DownloadManager : AutoCloseable {
+    public val state: StateFlow<DownloadManagerState>
 
-    suspend fun enqueue(
+    public fun observe(downloadId: DownloadId): Flow<DownloadSnapshot?>
+    public suspend fun await(downloadId: DownloadId): DownloadResult?
+
+    public suspend fun enqueue(request: DownloadRequest, id: DownloadId = DownloadId.new()): DownloadTask
+
+    public suspend fun enqueue(
         url: String,
-        destinationPath: Path? = null,
-        fileName: String? = null,
-        method: HttpMethod = HttpMethod.Get,
-        headers: Headers = Headers.Empty,
-        overwritePolicy: OverwritePolicy = OverwritePolicy.REPLACE,
-        retryPolicy: RetryPolicy = RetryPolicy.default(),
-        expectedSizeBytes: Long? = null,
-        progressGranularity: ProgressGranularity = ProgressGranularity(),
+        destination: DownloadDestination = DownloadDestination.Default,
         priority: DownloadPriority = DownloadPriority.NORMAL,
-        segmentation: DownloadSegmentation = DownloadSegmentation.Auto,
-        expectedChecksum: ChecksumSpec? = null,
-        id: DownloadId = DownloadId.new(),
-    ): DownloadId = enqueue(
-        request = DownloadRequest(
-            url = url,
-            destinationPath = destinationPath,
-            fileName = fileName,
-            method = method,
-            headers = headers,
-            overwritePolicy = overwritePolicy,
-            retryPolicy = retryPolicy,
-            expectedSizeBytes = expectedSizeBytes,
-            progressGranularity = progressGranularity,
-            priority = priority,
-            segmentation = segmentation,
-            expectedChecksum = expectedChecksum,
-        ),
-        id = id,
+    ): DownloadTask = enqueue(
+        DownloadRequest(url = url, destination = destination, priority = priority)
     )
 
-    suspend fun download(request: DownloadRequest): DownloadResult
+    public suspend fun download(request: DownloadRequest): DownloadResult
 
-    suspend fun download(
+    public suspend fun download(
         url: String,
-        destinationPath: Path? = null,
-        fileName: String? = null,
-        method: HttpMethod = HttpMethod.Get,
-        headers: Headers = Headers.Empty,
-        overwritePolicy: OverwritePolicy = OverwritePolicy.REPLACE,
-        retryPolicy: RetryPolicy = RetryPolicy.default(),
-        expectedSizeBytes: Long? = null,
-        progressGranularity: ProgressGranularity = ProgressGranularity(),
-        priority: DownloadPriority = DownloadPriority.NORMAL,
-        segmentation: DownloadSegmentation = DownloadSegmentation.Auto,
-        expectedChecksum: ChecksumSpec? = null,
-    ): DownloadResult = download(
-        DownloadRequest(
-            url = url,
-            destinationPath = destinationPath,
-            fileName = fileName,
-            method = method,
-            headers = headers,
-            overwritePolicy = overwritePolicy,
-            retryPolicy = retryPolicy,
-            expectedSizeBytes = expectedSizeBytes,
-            progressGranularity = progressGranularity,
-            priority = priority,
-            segmentation = segmentation,
-            expectedChecksum = expectedChecksum,
-        )
-    )
+        destination: DownloadDestination = DownloadDestination.Default,
+    ): DownloadResult = download(DownloadRequest(url = url, destination = destination))
 
-    suspend fun pause(downloadId: DownloadId): CommandAck
-    suspend fun resume(downloadId: DownloadId): CommandAck
-    suspend fun cancel(downloadId: DownloadId): CommandAck
-    suspend fun retry(downloadId: DownloadId): CommandAck
-    suspend fun move(downloadId: DownloadId, newPosition: Int): CommandAck
-    suspend fun pauseAll(): CommandAck
-    suspend fun resumeAll(): CommandAck
-    suspend fun cancelAll(): CommandAck
-    suspend fun retryAllFailed(): CommandAck
-    suspend fun setConcurrency(concurrency: DownloadConcurrency): CommandAck
+    public suspend fun pause(downloadId: DownloadId): CommandResult
+    public suspend fun resume(downloadId: DownloadId): CommandResult
+    public suspend fun cancel(downloadId: DownloadId): CommandResult
+    public suspend fun retry(downloadId: DownloadId): CommandResult
+    public suspend fun moveWithinPriority(downloadId: DownloadId, newPosition: Int): CommandResult
+    public suspend fun pauseAll(): CommandResult
+    public suspend fun resumeAll(): CommandResult
+    public suspend fun cancelAll(): CommandResult
+    public suspend fun retryAllFailed(): CommandResult
+    public suspend fun setConcurrency(concurrency: DownloadConcurrency): CommandResult
+
+    /** Remove one terminal entry from manager state, optionally deleting its completed file. */
+    public suspend fun remove(downloadId: DownloadId, deleteFile: Boolean = false): CommandResult
+
+    /** Remove all succeeded, failed, and cancelled entries from manager state. */
+    public suspend fun clearFinished(): CommandResult
 
     /**
-     * Graceful teardown. When [cancelActive] is false, in-flight downloads are allowed
-     * to finish (their final files are written) before this returns; when true, active
-     * downloads are cancelled. Outstanding [await] callers are released.
-     * Suspends until shutdown completes.
+     * Graceful teardown. With [cancelActive] false, active downloads drain before resources
+     * owned by a default-created manager are released.
      */
-    suspend fun shutdown(cancelActive: Boolean = true)
+    public suspend fun shutdown(cancelActive: Boolean = true)
 
-    /**
-     * Non-suspending, immediate teardown for lifecycle callbacks that are not
-     * coroutines (e.g. `ViewModel.onCleared()`). Cancels the coordinator and all
-     * active downloads at once without waiting; partial files follow the configured
-     * cleanup policy. For an orderly drain prefer [shutdown].
-     */
-    fun cancel()
+    /** Immediate non-suspending lifecycle teardown. */
+    public override fun close()
+
+    public companion object {
+        /**
+         * Create a batteries-included manager. Yukitoki selects the bundled platform Ktor
+         * engine and owns the resulting client and coroutine scope.
+         */
+        public fun create(
+            config: DownloadManagerConfig = DownloadManagerConfig(),
+            configureClient: HttpClientConfig<*>.() -> Unit = {},
+        ): DownloadManager {
+            check(DownloadLocations.isSupported) {
+                "Managed filesystem downloads are unavailable on this platform. Use DownloadIntents."
+            }
+            val client = HttpClient { configureClient() }
+            val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+            val delegate = DefaultDownloadManager(client, scope, config = config)
+            return OwnedDownloadManager(delegate, client, scope)
+        }
+
+        /** Create a manager borrowing caller-owned networking and coroutine resources. */
+        public fun create(
+            httpClient: HttpClient,
+            scope: CoroutineScope,
+            config: DownloadManagerConfig = DownloadManagerConfig(),
+        ): DownloadManager {
+            check(DownloadLocations.isSupported) {
+                "Managed filesystem downloads are unavailable on this platform. Use DownloadIntents."
+            }
+            return DefaultDownloadManager(httpClient, scope, config = config)
+        }
+    }
+}
+
+private class OwnedDownloadManager(
+    private val delegate: DownloadManager,
+    private val client: HttpClient,
+    private val scope: CoroutineScope,
+) : DownloadManager by delegate {
+    private var resourcesClosed = false
+
+    override suspend fun shutdown(cancelActive: Boolean) {
+        try {
+            delegate.shutdown(cancelActive)
+        } finally {
+            releaseResources()
+        }
+    }
+
+    public override fun close() {
+        try {
+            delegate.close()
+        } finally {
+            releaseResources()
+        }
+    }
+
+    private fun releaseResources() {
+        if (resourcesClosed) return
+        resourcesClosed = true
+        client.close()
+        scope.cancel()
+    }
 }

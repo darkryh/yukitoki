@@ -30,10 +30,6 @@ kotlin {
         val iosMain = create("iosMain") { dependsOn(named("commonMain").get()) }
         iosArm64Main.get().dependsOn(iosMain)
         iosSimulatorArm64Main.get().dependsOn(iosMain)
-        iosMain.dependencies {
-            implementation(libs.ktor.client.darwin)
-        }
-
         val desktopMain = getByName("desktopMain")
 
         commonMain.dependencies {
@@ -45,17 +41,10 @@ kotlin {
             implementation(libs.compose.material3)
             implementation(libs.compose.ui)
             implementation(libs.kotlinx.coroutines.core)
-            implementation(libs.ktor.client.core)
-            implementation(libs.okio)
-        }
-
-        androidMain.dependencies {
-            implementation(libs.ktor.client.okhttp)
         }
 
         desktopMain.dependencies {
             implementation(compose.desktop.currentOs)
-            implementation(libs.ktor.client.okhttp)
             implementation(libs.kotlinx.coroutines.swing)
         }
     }

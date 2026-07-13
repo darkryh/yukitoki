@@ -50,7 +50,7 @@ fun DownloadRow(
     onIntent: (DownloadUiIntent) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val name = snapshot.request.destinationPath?.name ?: snapshot.request.url.substringAfterLast("/")
+    val name = snapshot.resolvedDestination?.name ?: snapshot.request.url.substringAfterLast("/")
     val (fileTypeLabel, fileTypeColor) = getFileTypeDetails(name)
     val state = snapshot.state
 
@@ -225,7 +225,7 @@ fun DownloadRow(
                     )
 
                     if (isRunning && progress != null) {
-                        val etaText = formatEta(progress.etaMillis)
+                        val etaText = formatEta(progress.eta)
                         val speedText = progress.speedBytesPerSecond?.let { formatSpeed(it) } ?: "0 B/s"
                         Text(
                             text = "$speedText • ETA: $etaText",

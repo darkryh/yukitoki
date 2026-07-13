@@ -17,6 +17,7 @@ import kotlinx.coroutines.withTimeout
 import okio.FileSystem
 import okio.Path
 import okio.Path.Companion.toPath
+import org.junit.Assume.assumeTrue
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
@@ -180,7 +181,7 @@ class DownloadManagerExternalSmokeTest {
                         DownloadRequest(
                             url = resource.url,
                             destinationPath = destination,
-                            segmentation = if (resource.supportsRange) DownloadSegmentation.Auto else DownloadSegmentation.SingleStream,
+                            segmentation = if (resource.supportsRange) DownloadSegmentation.Auto else DownloadSegmentation.Single,
                         )
                     )
                     assertIs<DownloadResult.Success>(result, resource.name)
@@ -199,7 +200,10 @@ class DownloadManagerExternalSmokeTest {
     }
 
     private fun runExternal(block: suspend () -> Unit) {
-        if (System.getenv("YUKITOKI_EXTERNAL_E2E") != "true") return
+        assumeTrue(
+            "Set YUKITOKI_EXTERNAL_E2E=true to run public-network smoke tests",
+            System.getenv("YUKITOKI_EXTERNAL_E2E") == "true",
+        )
         runBlocking { block() }
     }
 

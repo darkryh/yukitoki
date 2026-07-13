@@ -2,6 +2,7 @@ package io.github.darkryh.yukitoki.sample.ui.components
 
 import io.github.darkryh.yukitoki.manager.DownloadFailure
 import io.github.darkryh.yukitoki.manager.DownloadState
+import kotlin.time.Duration
 
 fun formatSpeed(bytesPerSec: Long): String {
     if (bytesPerSec <= 0) return "0 B/s"
@@ -21,9 +22,9 @@ fun formatBytes(bytes: Long): String {
     return "${((gb * 100).toInt() / 100.0)} GB"
 }
 
-fun formatEta(etaMillis: Long?): String {
-    if (etaMillis == null || etaMillis < 0) return "--:--"
-    val seconds = etaMillis / 1000
+fun formatEta(eta: Duration?): String {
+    if (eta == null || eta.isNegative()) return "--:--"
+    val seconds = eta.inWholeSeconds
     if (seconds < 60) return "${seconds}s"
     val minutes = seconds / 60
     val remainingSeconds = seconds % 60
@@ -61,6 +62,7 @@ fun failureLabel(failure: DownloadFailure): String = when (failure) {
     is DownloadFailure.IntegrityMismatch -> "size mismatch: expected ${formatBytes(failure.expectedSize)}, got ${formatBytes(failure.actualSize)}"
     is DownloadFailure.ChecksumMismatch -> "checksum mismatch"
     is DownloadFailure.ServerChanged -> "server file changed: ${failure.message}"
-    is DownloadFailure.CancelledByUser -> "cancelled"
-    is DownloadFailure.Unknown -> failure.message
+    is DownloadFailure.Unsupported -> "unsupported: ${failure.message}"
+    is DownloadFailure.ManagerClosed -> failure.message
+    is DownloadFailure.Unexpected -> failure.message
 }

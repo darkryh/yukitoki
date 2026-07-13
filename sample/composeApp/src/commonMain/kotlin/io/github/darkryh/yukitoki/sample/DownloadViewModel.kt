@@ -1,8 +1,6 @@
 package io.github.darkryh.yukitoki.sample
 
-import io.github.darkryh.yukitoki.manager.DefaultDownloadManager
 import io.github.darkryh.yukitoki.manager.DownloadConcurrency
-import io.github.darkryh.yukitoki.manager.DownloadId
 import io.github.darkryh.yukitoki.manager.DownloadManager
 import io.github.darkryh.yukitoki.manager.DownloadPriority
 import io.github.darkryh.yukitoki.sample.ui.DownloadUiIntent
@@ -10,13 +8,13 @@ import io.github.darkryh.yukitoki.sample.ui.DownloadUiState
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
-import okio.Path.Companion.toPath
 
 /**
  * A plain, platform-agnostic presentation model wrapping a [DownloadManager].
@@ -24,14 +22,10 @@ import okio.Path.Companion.toPath
  * Kept free of any androidx/lifecycle dependency so the exact same class compiles
  * and runs on Android, iOS and desktop.
  */
-class DownloadViewModel(private val environment: DownloadEnvironment) {
+class DownloadViewModel {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
-    private val manager: DownloadManager = DefaultDownloadManager(
-        httpClient = environment.httpClient,
-        scope = scope,
-        fileSystem = environment.fileSystem,
-    )
+    private val manager: DownloadManager = DownloadManager.create()
 
     // Keep track of the local UI state like the URL input field
     private val _urlInput = MutableStateFlow("https://fsn1-speed.hetzner.com/10GB.bin")
@@ -89,21 +83,14 @@ class DownloadViewModel(private val environment: DownloadEnvironment) {
     private fun enqueue(url: String, priority: DownloadPriority = DownloadPriority.NORMAL) {
         val trimmed = url.trim()
         if (trimmed.isEmpty()) return
-        val destination = "${environment.downloadsDir}/${fileNameFor(trimmed)}".toPath()
         scope.launch {
-            manager.enqueue(url = trimmed, destinationPath = destination, priority = priority)
+            manager.enqueue(url = trimmed, priority = priority)
         }
     }
 
     /** Non-suspending teardown for a UI lifecycle callback (e.g. `onDispose`). */
     fun close() {
-        manager.cancel()
-        environment.close()
-    }
-
-    private fun fileNameFor(url: String): String {
-        val candidate = url.substringBefore('?').substringBefore('#').substringAfterLast('/')
-        val sanitized = candidate.filter { it.isLetterOrDigit() || it == '.' || it == '-' || it == '_' }
-        return sanitized.ifBlank { "download-${DownloadId.new().value}.bin" }
+        manager.close()
+        scope.cancel()
     }
 }
