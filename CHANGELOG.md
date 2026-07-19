@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0-beta04] - 2026-07-19
+
+### Added
+
+- `DownloadIntentRequest.headers` (`io.ktor.http.Headers`, default `Headers.Empty`) for authenticated
+  wasm downloads. On wasm, non-empty headers switch `DownloadIntents.dispatch` from plain
+  `<a download>` anchor navigation to a `fetch()`-backed path that carries the headers, buffers the
+  response as a `Blob`, and saves it via a short-lived `blob:` object URL — no streaming, no progress;
+  suitable for bounded-size authenticated payloads, not large files. Empty headers (the default) keep
+  the original anchor-navigation behavior unchanged, and every non-wasm platform is unaffected since
+  `dispatch` there always returns `Rejected` regardless of headers.
+
+## [1.0.0-beta03] - 2026-07-13
+
 ### Added
 
 - `DownloadManager.create()` with owned resources and bundled OkHttp, CIO, and Darwin engines.
@@ -89,6 +103,8 @@ First public beta of the Yukitoki Kotlin Multiplatform download manager.
   the browser owns the actual transfer.
 - **Sample app** — a shared Compose Multiplatform UI running on Android, iOS, and desktop.
 
-[Unreleased]: https://github.com/darkryh/yukitoki/compare/v1.0.0-beta02...HEAD
+[Unreleased]: https://github.com/darkryh/yukitoki/compare/v1.0.0-beta04...HEAD
+[1.0.0-beta04]: https://github.com/darkryh/yukitoki/compare/v1.0.0-beta03...v1.0.0-beta04
+[1.0.0-beta03]: https://github.com/darkryh/yukitoki/compare/v1.0.0-beta02...v1.0.0-beta03
 [1.0.0-beta02]: https://github.com/darkryh/yukitoki/compare/v1.0.0-beta01...v1.0.0-beta02
 [1.0.0-beta01]: https://github.com/darkryh/yukitoki/releases/tag/v1.0.0-beta01
