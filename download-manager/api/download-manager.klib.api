@@ -569,8 +569,10 @@ final class io.github.darkryh.yukitoki.manager/DefaultDownloadManager : io.githu
 }
 
 final class io.github.darkryh.yukitoki.manager/DownloadIntentRequest { // io.github.darkryh.yukitoki.manager/DownloadIntentRequest|null[0]
-    constructor <init>(kotlin/String, kotlin/String? = ...) // io.github.darkryh.yukitoki.manager/DownloadIntentRequest.<init>|<init>(kotlin.String;kotlin.String?){}[0]
+    constructor <init>(kotlin/String, kotlin/String? = ..., io.ktor.http/Headers = ...) // io.github.darkryh.yukitoki.manager/DownloadIntentRequest.<init>|<init>(kotlin.String;kotlin.String?;io.ktor.http.Headers){}[0]
 
+    final val headers // io.github.darkryh.yukitoki.manager/DownloadIntentRequest.headers|{}headers[0]
+        final fun <get-headers>(): io.ktor.http/Headers // io.github.darkryh.yukitoki.manager/DownloadIntentRequest.headers.<get-headers>|<get-headers>(){}[0]
     final val suggestedFileName // io.github.darkryh.yukitoki.manager/DownloadIntentRequest.suggestedFileName|{}suggestedFileName[0]
         final fun <get-suggestedFileName>(): kotlin/String? // io.github.darkryh.yukitoki.manager/DownloadIntentRequest.suggestedFileName.<get-suggestedFileName>|<get-suggestedFileName>(){}[0]
     final val url // io.github.darkryh.yukitoki.manager/DownloadIntentRequest.url|{}url[0]
@@ -578,7 +580,8 @@ final class io.github.darkryh.yukitoki.manager/DownloadIntentRequest { // io.git
 
     final fun component1(): kotlin/String // io.github.darkryh.yukitoki.manager/DownloadIntentRequest.component1|component1(){}[0]
     final fun component2(): kotlin/String? // io.github.darkryh.yukitoki.manager/DownloadIntentRequest.component2|component2(){}[0]
-    final fun copy(kotlin/String = ..., kotlin/String? = ...): io.github.darkryh.yukitoki.manager/DownloadIntentRequest // io.github.darkryh.yukitoki.manager/DownloadIntentRequest.copy|copy(kotlin.String;kotlin.String?){}[0]
+    final fun component3(): io.ktor.http/Headers // io.github.darkryh.yukitoki.manager/DownloadIntentRequest.component3|component3(){}[0]
+    final fun copy(kotlin/String = ..., kotlin/String? = ..., io.ktor.http/Headers = ...): io.github.darkryh.yukitoki.manager/DownloadIntentRequest // io.github.darkryh.yukitoki.manager/DownloadIntentRequest.copy|copy(kotlin.String;kotlin.String?;io.ktor.http.Headers){}[0]
     final fun equals(kotlin/Any?): kotlin/Boolean // io.github.darkryh.yukitoki.manager/DownloadIntentRequest.equals|equals(kotlin.Any?){}[0]
     final fun hashCode(): kotlin/Int // io.github.darkryh.yukitoki.manager/DownloadIntentRequest.hashCode|hashCode(){}[0]
     final fun toString(): kotlin/String // io.github.darkryh.yukitoki.manager/DownloadIntentRequest.toString|toString(){}[0]
