@@ -72,4 +72,6 @@ Commands return `CommandResult.Accepted` or `Rejected`.
 
 ## Browser intents
 
-`DownloadIntents.dispatch(DownloadIntentRequest(url, suggestedFileName))` returns `DownloadIntentResult.Dispatched` or `Rejected`. `Dispatched` only means that the browser accepted the action; it does not claim completion, progress, or a final filesystem path.
+`DownloadIntents.dispatch(DownloadIntentRequest(url, suggestedFileName, headers))` returns `DownloadIntentResult.Dispatched` or `Rejected`. `Dispatched` only means that the browser accepted the action; it does not claim completion, progress, or a final filesystem path.
+
+`DownloadIntentRequest.headers` (`io.ktor.http.Headers`, default `Headers.Empty`) is only honored on wasm. Empty headers take the original plain `<a download>` anchor-navigation path. Non-empty headers switch to a `fetch()`-backed path that carries those headers, buffers the whole response as a `Blob`, and saves it via a short-lived `blob:` object URL — no streaming, no progress; suitable only for bounded-size authenticated payloads. See [Browser downloads](../how-to/download-on-wasm.md#authenticated-downloads-with-headers). On every non-wasm platform, `dispatch` always returns `Rejected`, so `headers` has no effect there.

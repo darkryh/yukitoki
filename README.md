@@ -11,7 +11,7 @@ Current development version: `1.0.0-SNAPSHOT`.
 The last published preview is:
 
 ```kotlin
-implementation("io.github.darkryh.yukitoki:download-manager:1.0.0-beta02")
+implementation("io.github.darkryh.yukitoki:download-manager:1.0.0-beta04")
 ```
 
 The pre-1.0 API documented below is currently available from this repository. The artifact bundles an appropriate Ktor engine for Android, JVM, and iOS.
