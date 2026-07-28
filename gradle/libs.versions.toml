@@ -11,7 +11,7 @@ android-minSdk = "26"
 
 # Client HTTP & Networking
 ktor = "3.5.1"
-okio = "3.17.0"
+okio = "3.18.0"
 
 # Async & Concurrency
 kotlinx-coroutines = "1.11.0"
