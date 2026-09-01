@@ -10,8 +10,8 @@ android-compileSdk = "36"
 android-minSdk = "26"
 
 # Client HTTP & Networking
-ktor = "3.5.1"
-okio = "3.17.0"
+ktor = "3.5.2"
+okio = "3.18.1"
 
 # Async & Concurrency
 kotlinx-coroutines = "1.11.0"
