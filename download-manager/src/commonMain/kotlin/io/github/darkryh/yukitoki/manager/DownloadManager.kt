@@ -2,6 +2,8 @@ package io.github.darkryh.yukitoki.manager
 
 import io.ktor.client.HttpClient
 import io.ktor.client.HttpClientConfig
+import io.ktor.client.plugins.HttpTimeout
+import io.ktor.client.plugins.HttpTimeoutConfig
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -71,8 +73,14 @@ public interface DownloadManager : AutoCloseable {
 
     public companion object {
         /**
-         * Create a batteries-included manager. Yukitoki selects the bundled platform Ktor
-         * engine and owns the resulting client and coroutine scope.
+         * Create a batteries-included manager that owns its Ktor client and coroutine scope.
+         *
+         * The client always uses the engine Yukitoki bundles for the platform (Java on JVM
+         * desktop, OkHttp on Android, Darwin on iOS), never whichever engine happens to be
+         * first on the classpath. It installs `HttpTimeout` with a bounded connect timeout and
+         * no total request timeout, so long transfers are never cut off while bytes are still
+         * flowing; stalls are caught by [DownloadManagerConfig.idleTimeout] instead.
+         * [configureClient] runs after these defaults and may override them.
          */
         public fun create(
             config: DownloadManagerConfig = DownloadManagerConfig(),
@@ -81,13 +89,20 @@ public interface DownloadManager : AutoCloseable {
             check(DownloadLocations.isSupported) {
                 "Managed filesystem downloads are unavailable on this platform. Use DownloadIntents."
             }
-            val client = HttpClient { configureClient() }
+            val client = createOwnedHttpClient(configureClient)
             val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
             val delegate = DefaultDownloadManager(client, scope, config = config)
             return OwnedDownloadManager(delegate, client, scope)
         }
 
-        /** Create a manager borrowing caller-owned networking and coroutine resources. */
+        /**
+         * Create a manager borrowing caller-owned networking and coroutine resources.
+         *
+         * Download requests opt out of any total request timeout on [httpClient] (including
+         * the CIO engine's 15 s default), so transfers of any length complete. The client's
+         * connect and socket timeouts still apply. The caller remains responsible for closing
+         * [httpClient] and cancelling [scope].
+         */
         public fun create(
             httpClient: HttpClient,
             scope: CoroutineScope,
@@ -100,6 +115,18 @@ public interface DownloadManager : AutoCloseable {
         }
     }
 }
+
+/** Connect timeout for the client owned by [DownloadManager.create]. */
+internal const val OWNED_CLIENT_CONNECT_TIMEOUT_MILLIS: Long = 30_000
+
+internal fun createOwnedHttpClient(configureClient: HttpClientConfig<*>.() -> Unit = {}): HttpClient =
+    platformHttpClient {
+        install(HttpTimeout) {
+            requestTimeoutMillis = HttpTimeoutConfig.INFINITE_TIMEOUT_MS
+            connectTimeoutMillis = OWNED_CLIENT_CONNECT_TIMEOUT_MILLIS
+        }
+        configureClient()
+    }
 
 private class OwnedDownloadManager(
     private val delegate: DownloadManager,

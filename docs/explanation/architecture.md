@@ -120,7 +120,14 @@ Two mechanisms keep Yukitoki polite and resilient on imperfect networks:
 
 The idle/stall timeout (`idleTimeout`) is a separate safety net for a specific failure the HTTP
 client's own timeouts miss: a socket that connects and then goes silent forever. It fails the attempt
-if no bytes arrive for the configured window.
+if the response head, or the next body bytes, do not arrive within the configured window. It also
+bounds the HEAD and range metadata probes used to plan segmented downloads.
+
+Total request timeouts work the other way: download requests explicitly opt out of them. A total
+timeout caps how long a whole transfer may take, which is wrong for a file of unknown size on a link
+of unknown speed. Ktor's CIO engine applies a 15-second one by default unless a request sets its own,
+so every body-carrying request sets `requestTimeoutMillis = INFINITE` and lets `idleTimeout` decide
+whether the transfer is still alive.
 
 ## The typed failure model
 
@@ -154,7 +161,7 @@ job is to execute a download well once you've decided to start it.
 
 ## Where this is a beta
 
-`1.0.0-beta04` is a feature-complete beta. The architecture above is stable and unlikely to change,
+`1.0.0-beta05` is a feature-complete beta. The architecture above is stable and unlikely to change,
 but as a pre-`1.0.0` release the exact shape of some public types may still be refined in response to
 feedback before the stable release. Pin the version you build against and consult the
 [changelog](../../CHANGELOG.md) when upgrading.

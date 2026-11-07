@@ -76,7 +76,10 @@ kotlin {
         }
 
         jvmMain.dependencies {
-            implementation(libs.ktor.client.cio)
+            // Named explicitly in platformHttpClient(). The JDK HttpClient has no total
+            // request timeout, so it is also harmless if a consumer's bare HttpClient()
+            // resolves to it through Yukitoki's runtime classpath.
+            implementation(libs.ktor.client.java)
         }
 
         iosMain.dependencies {
@@ -94,5 +97,13 @@ kotlin {
         wasmJsMain.dependencies {
             implementation(libs.kotlinx.browser)
         }
+    }
+}
+
+// Robolectric 4.17 sets FileDescriptor internals through jdk.internal.access, which JDK 17+
+// does not export to unnamed modules by default.
+tasks.withType<Test>().configureEach {
+    if (name.contains("AndroidHostTest")) {
+        jvmArgs("--add-exports=java.base/jdk.internal.access=ALL-UNNAMED")
     }
 }

@@ -2,7 +2,7 @@
 
 ## Creation
 
-- `DownloadManager.create()` creates a manager with bundled platform networking and owned resources.
+- `DownloadManager.create(config, configureClient)` creates a manager with owned resources and a client on the bundled platform engine (Java on JVM, OkHttp on Android, Darwin on iOS). `configureClient` runs after Yukitoki's defaults.
 - `DownloadManager.create(httpClient, scope, config)` borrows caller-owned resources.
 - `DefaultDownloadManager(...)` is the advanced constructor for custom filesystems, dispatchers, and tests.
 

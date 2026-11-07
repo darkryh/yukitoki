@@ -722,6 +722,7 @@ public class DefaultDownloadManager internal constructor(
 
         val statement = httpClient.prepareRequest(request.url) {
             this.method = HttpMethod.Get
+            disableTotalRequestTimeout()
             headers {
                 request.headers.entries().forEach { (name, values) ->
                     values.forEach { value -> append(name, value) }
@@ -736,7 +737,7 @@ public class DefaultDownloadManager internal constructor(
             }
         }
 
-        return statement.execute { response ->
+        return statement.executeWithResponseTimeout(config.idleTimeout) { response ->
             val responseETag = response.headers[HttpHeaders.ETag]?.trim()
             val responseLastModified = response.headers[HttpHeaders.LastModified]?.trim()
 
@@ -869,7 +870,7 @@ public class DefaultDownloadManager internal constructor(
         config: WorkerConfig,
         partialPath: Path,
     ): Boolean {
-        val metadata = fetchSegmentedMetadata(id, request) ?: return false
+        val metadata = fetchSegmentedMetadata(id, request, config.idleTimeout) ?: return false
         val origin = originKey(request.url)
         var desiredSegments = min(resolveSegmentCount(request.segmentation, metadata.totalBytes).toLong(), metadata.totalBytes)
             .toInt()
@@ -1053,7 +1054,11 @@ public class DefaultDownloadManager internal constructor(
         val length: Long = endInclusive - start + 1L
     }
 
-    private suspend fun fetchSegmentedMetadata(id: DownloadId, request: DownloadRequest): SegmentedMetadata? {
+    private suspend fun fetchSegmentedMetadata(
+        id: DownloadId,
+        request: DownloadRequest,
+        responseTimeout: Duration,
+    ): SegmentedMetadata? {
         val statement = httpClient.prepareRequest(request.url) {
             method = HttpMethod.Head
             headers {
@@ -1062,13 +1067,13 @@ public class DefaultDownloadManager internal constructor(
             }
         }
         return try {
-            statement.execute { response ->
+            statement.executeWithResponseTimeout(responseTimeout) { response ->
                 when {
                     response.status == HttpStatusCode.MethodNotAllowed || response.status == HttpStatusCode.NotImplemented -> {
-                        fetchRangeProbeMetadata(id, request)
+                        fetchRangeProbeMetadata(id, request, responseTimeout)
                     }
                     response.status.value !in 200..299 -> {
-                        fetchRangeProbeMetadata(id, request)
+                        fetchRangeProbeMetadata(id, request, responseTimeout)
                             ?: if (request.segmentation is DownloadSegmentation.MaxSegments) {
                                 throw DownloadHttpException(
                                     code = response.status.value,
@@ -1082,11 +1087,11 @@ public class DefaultDownloadManager internal constructor(
                     response.headers[HttpHeaders.AcceptRanges]
                         ?.split(',')
                         ?.any { it.trim().equals("bytes", ignoreCase = true) } != true -> {
-                        fetchRangeProbeMetadata(id, request)
+                        fetchRangeProbeMetadata(id, request, responseTimeout)
                     }
                     else -> {
                         val totalBytes = response.headers[HttpHeaders.ContentLength]?.toLongOrNull()?.takeIf { it > 0L }
-                            ?: return@execute fetchRangeProbeMetadata(id, request)
+                            ?: return@executeWithResponseTimeout fetchRangeProbeMetadata(id, request, responseTimeout)
                         val eTag = response.headers[HttpHeaders.ETag]?.trim()
                         val lastModified = response.headers[HttpHeaders.LastModified]?.trim()
                         publishSegmentedMetadata(id, eTag, lastModified)
@@ -1094,13 +1099,19 @@ public class DefaultDownloadManager internal constructor(
                     }
                 }
             }
+        } catch (t: CancellationException) {
+            throw t
         } catch (t: Throwable) {
-            fetchRangeProbeMetadata(id, request)
+            fetchRangeProbeMetadata(id, request, responseTimeout)
                 ?: if (request.segmentation is DownloadSegmentation.MaxSegments) throw t else null
         }
     }
 
-    private suspend fun fetchRangeProbeMetadata(id: DownloadId, request: DownloadRequest): SegmentedMetadata? {
+    private suspend fun fetchRangeProbeMetadata(
+        id: DownloadId,
+        request: DownloadRequest,
+        responseTimeout: Duration,
+    ): SegmentedMetadata? {
         val statement = httpClient.prepareRequest(request.url) {
             method = HttpMethod.Get
             headers {
@@ -1110,17 +1121,19 @@ public class DefaultDownloadManager internal constructor(
             }
         }
         return try {
-            statement.execute { response ->
-                if (response.status != HttpStatusCode.PartialContent) return@execute null
+            statement.executeWithResponseTimeout(responseTimeout) { response ->
+                if (response.status != HttpStatusCode.PartialContent) return@executeWithResponseTimeout null
                 val totalBytes = response.headers[HttpHeaders.ContentRange]
                     ?.let { parseTotalBytesFromContentRange(it) }
                     ?: response.headers[HttpHeaders.ContentLength]?.toLongOrNull()?.takeIf { it > 1L }
-                    ?: return@execute null
+                    ?: return@executeWithResponseTimeout null
                 val eTag = response.headers[HttpHeaders.ETag]?.trim()
                 val lastModified = response.headers[HttpHeaders.LastModified]?.trim()
                 publishSegmentedMetadata(id, eTag, lastModified)
                 SegmentedMetadata(totalBytes, eTag, lastModified)
             }
+        } catch (t: CancellationException) {
+            throw t
         } catch (_: Throwable) {
             null
         }
@@ -1147,6 +1160,7 @@ public class DefaultDownloadManager internal constructor(
     ) {
         val statement = httpClient.prepareRequest(request.url) {
             method = HttpMethod.Get
+            disableTotalRequestTimeout()
             headers {
                 appendCallerHeaders(request)
                 appendIdentityEncodingIfAbsent(request)
@@ -1157,7 +1171,7 @@ public class DefaultDownloadManager internal constructor(
         }
         val permit = acquireOriginPermit(originKey(request.url))
         try {
-            statement.execute { response ->
+            statement.executeWithResponseTimeout(config.idleTimeout) { response ->
                 if (response.status != HttpStatusCode.PartialContent) {
                     throw DownloadHttpException(
                         code = response.status.value,
@@ -1193,6 +1207,46 @@ public class DefaultDownloadManager internal constructor(
             }
         } finally {
             permit.release()
+        }
+    }
+
+    /**
+     * A download body may legitimately stream for hours, so a total request timeout
+     * (CIO defaults to 15 s even without the HttpTimeout plugin) must never cut it off.
+     * Setting the per-request timeout capability makes every Ktor engine, and an installed
+     * HttpTimeout plugin, treat this request as unbounded; liveness is governed instead by
+     * [executeWithResponseTimeout] and [readWithIdleTimeout]. Connect and socket timeouts
+     * stay whatever the client configured.
+     */
+    private fun HttpRequestBuilder.disableTotalRequestTimeout() {
+        if (HttpTimeoutCapability in httpClient.engine.supportedCapabilities) {
+            timeout { requestTimeoutMillis = HttpTimeoutConfig.INFINITE_TIMEOUT_MS }
+        }
+    }
+
+    /**
+     * Executes this statement but fails with [ResponseHeadTimeoutException] when the response
+     * head does not arrive within [timeout]. Once [block] runs, body liveness belongs to
+     * [readWithIdleTimeout]. A non-positive [timeout] disables the guard.
+     */
+    private suspend fun <T> HttpStatement.executeWithResponseTimeout(
+        timeout: Duration,
+        block: suspend (HttpResponse) -> T,
+    ): T {
+        if (timeout <= Duration.ZERO) return execute { block(it) }
+        return coroutineScope {
+            val watchdog = launch {
+                delay(timeout)
+                throw ResponseHeadTimeoutException(timeout)
+            }
+            try {
+                execute { response ->
+                    watchdog.cancel()
+                    block(response)
+                }
+            } finally {
+                watchdog.cancel()
+            }
         }
     }
 
@@ -1383,6 +1437,7 @@ public class DefaultDownloadManager internal constructor(
         )
         is HttpRequestTimeoutException -> DownloadFailure.Timeout(throwable.message ?: "Request timeout")
         is DownloadStallException -> DownloadFailure.Timeout(throwable.message ?: "Download stalled")
+        is ResponseHeadTimeoutException -> DownloadFailure.Timeout(throwable.message ?: "Response timed out")
         is DownloadIntegrityException -> DownloadFailure.IntegrityMismatch(throwable.expected, throwable.actual)
         is DownloadFileExistsException -> DownloadFailure.AlreadyExists(throwable.path, "Target file already exists: ${throwable.path}")
         is DiskNoSpaceException -> DownloadFailure.NoSpace(path, throwable.message)
@@ -1635,5 +1690,9 @@ private class ServerFileChangedException(
 ) : RuntimeException(message)
 
 private class DownloadStallException : RuntimeException("Download stalled: no bytes received within the idle timeout")
+
+private class ResponseHeadTimeoutException(
+    timeout: Duration,
+) : RuntimeException("No response from server within the idle timeout ($timeout)")
 
 private val filesystemBackedSchemes = setOf("http", "https")

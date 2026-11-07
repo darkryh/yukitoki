@@ -11,7 +11,7 @@ Current development version: `1.0.0-SNAPSHOT`.
 The last published preview is:
 
 ```kotlin
-implementation("io.github.darkryh.yukitoki:download-manager:1.0.0-beta04")
+implementation("io.github.darkryh.yukitoki:download-manager:1.0.0-beta05")
 ```
 
 The pre-1.0 API documented below is currently available from this repository. The artifact bundles an appropriate Ktor engine for Android, JVM, and iOS.
@@ -65,10 +65,12 @@ val manager = DownloadManager.create(
 
 Injected resources remain caller-owned. A manager created with the no-argument factory owns and closes its client and scope.
 
+Downloads never inherit a total request timeout: every download request opts out of one, including the CIO engine's built-in 15-second default, so a transfer can run as long as bytes keep arriving. Your client's connect and socket timeouts still apply, and `DownloadManagerConfig.idleTimeout` fails a download whose server stops responding.
+
 ## Platform scope
 
 - Android: automatic application-context initialization and bundled OkHttp engine.
-- JVM desktop: bundled CIO engine and Linux XDG Downloads-directory support.
+- JVM desktop: bundled Java (JDK `HttpClient`) engine and Linux XDG Downloads-directory support.
 - iOS device and Intel/Apple Silicon simulators: bundled Darwin engine and sandboxed `Documents/Downloads`.
 - Wasm browser: `DownloadIntents`; managed filesystem downloads are unsupported.
 

@@ -14,7 +14,15 @@ Create a manager in common code:
 val manager = DownloadManager.create()
 ```
 
-This factory bundles/selects the platform Ktor engine, creates its own scope, and uses the platform filesystem. Android initialization is automatic.
+This factory builds its own Ktor client on the engine Yukitoki bundles for the platform (Java on JVM desktop, OkHttp on Android, Darwin on iOS), creates its own scope, and uses the platform filesystem. Android initialization is automatic. The engine is named explicitly, so the result never depends on which engine happens to be first on your classpath.
+
+To customize the owned client, pass `configureClient`. It runs after Yukitoki's defaults (an `HttpTimeout` with no total request timeout and a 30-second connect timeout), so it can override them:
+
+```kotlin
+val manager = DownloadManager.create {
+    install(DefaultRequest) { headers.append("User-Agent", "MyApp/1.0") }
+}
+```
 
 Enqueue and observe a task:
 
@@ -70,6 +78,8 @@ val manager = DownloadManager.create(client, applicationScope)
 ```
 
 The injected client and scope remain caller-owned. Close them yourself after `manager.shutdown()` or `manager.close()`.
+
+Download requests opt out of the client's total request timeout, so a short `requestTimeoutMillis`, or the CIO engine's built-in 15-second limit, cannot abort a long transfer. Connect and socket timeouts you configure still apply.
 
 ## Lifecycle
 

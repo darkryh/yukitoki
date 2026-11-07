@@ -7,6 +7,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0-beta05] - 2026-11-07
+
+### Fixed
+
+- Downloads longer than 15 seconds no longer fail with `DownloadFailure.Timeout` on JVM desktop
+  ([#15](https://github.com/darkryh/yukitoki/issues/15)). Yukitoki bundled Ktor CIO, whose engine
+  cancels a whole call, body included, after a 15-second `requestTimeout` by default, and
+  `DownloadManager.create()` used a bare `HttpClient {}`, so the engine depended on classpath order.
+  The bug often appeared only in packaged apps, which list jars alphabetically.
+  - Every download request (single-stream and each range segment) now opts out of a total request
+    timeout. This also protects clients passed to `create(httpClient, scope)`, including CIO clients
+    with no `HttpTimeout` plugin. Connect and socket timeouts are still respected.
+  - `create()` names the bundled engine explicitly on every platform and installs `HttpTimeout` with
+    no total request timeout and a 30-second connect timeout. `configureClient` runs afterwards and
+    can override both.
+- `idleTimeout` now also bounds the wait for a response head and the HEAD / range metadata probes, so
+  a server that accepts a connection but never answers fails with `DownloadFailure.Timeout` instead
+  of hanging.
+- Metadata probes no longer swallow coroutine cancellation.
+
+### Changed
+
+- **JVM desktop bundles the Java engine (`ktor-client-java`, built on the JDK `HttpClient`) instead
+  of CIO.** CIO is no longer on consumers' runtime classpath through Yukitoki. If your app called a
+  bare `HttpClient()` and relied on Yukitoki to supply CIO, it now resolves to the Java engine; add
+  `ktor-client-cio` yourself to keep CIO.
+- **Android consumers must compile against API 37.** Ktor 3.6 depends on OkHttp 5.5, whose AAR
+  metadata requires `compileSdk = 37` (Android Gradle Plugin 9.x).
+- Dependencies: Ktor 3.6.1, Okio 3.18.2, Kotlin 2.4.21.
+- The JVM ABI dump gains public no-arg constructors for `CommandResult.Accepted`,
+  `DownloadManagerConfig`, and `ProgressGranularity`, emitted by Kotlin 2.4.21. Additive only.
+
 ## [1.0.0-beta04] - 2026-07-19
 
 ### Added
@@ -103,7 +135,8 @@ First public beta of the Yukitoki Kotlin Multiplatform download manager.
   the browser owns the actual transfer.
 - **Sample app** — a shared Compose Multiplatform UI running on Android, iOS, and desktop.
 
-[Unreleased]: https://github.com/darkryh/yukitoki/compare/v1.0.0-beta04...HEAD
+[Unreleased]: https://github.com/darkryh/yukitoki/compare/v1.0.0-beta05...HEAD
+[1.0.0-beta05]: https://github.com/darkryh/yukitoki/compare/v1.0.0-beta04...v1.0.0-beta05
 [1.0.0-beta04]: https://github.com/darkryh/yukitoki/compare/v1.0.0-beta03...v1.0.0-beta04
 [1.0.0-beta03]: https://github.com/darkryh/yukitoki/compare/v1.0.0-beta02...v1.0.0-beta03
 [1.0.0-beta02]: https://github.com/darkryh/yukitoki/compare/v1.0.0-beta01...v1.0.0-beta02

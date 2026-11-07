@@ -41,8 +41,18 @@ import java.util.concurrent.atomic.AtomicInteger
  *  - `GET /truncated`            declares a larger body than it sends.
  *  - `GET /chunked`              streams without a fixed Content-Length.
  *  - `GET /range416`             returns 416 to resume requests.
+ *  - `GET|HEAD /slow`            Range-aware; every response body is paced as [slowChunks]
+ *                                chunks [slowChunkDelayMs] apart (never idle long, but
+ *                                slower in total than a short engine request timeout).
+ *  - `GET /hangheaders`          accepts the request and never sends a response head.
+ *  - `GET|HEAD /hanghead`        HEAD never answers; ranged GET works (probe fallback).
+ *  - `GET /requireheader`        403 unless `X-Yukitoki-Test` is present, else `/file`.
  */
-class E2EDownloadServer(payloadSize: Int = 512 * 1024) {
+class E2EDownloadServer(
+    payloadSize: Int = 512 * 1024,
+    private val slowChunks: Int = 15,
+    private val slowChunkDelayMs: Long = 200,
+) {
     /** Deterministic payload so any byte slice can be content-verified. */
     val payload: ByteArray = ByteArray(payloadSize) { (it % 256).toByte() }
     val etag: String = "\"v1-${payload.size}\""
@@ -146,6 +156,28 @@ class E2EDownloadServer(payloadSize: Int = 512 * 1024) {
                 }
             }
 
+            head("/slow") { call.serveHead(supportRange = true) }
+            get("/slow") { call.serveBody(supportRange = true, slow = true) }
+
+            get("/hangheaders") {
+                delay(120_000)
+                call.respond(HttpStatusCode.OK, "too late")
+            }
+
+            head("/hanghead") {
+                delay(120_000)
+                call.serveHead(supportRange = true)
+            }
+            get("/hanghead") { call.serveBody(supportRange = true) }
+
+            get("/requireheader") {
+                if (call.request.headers["X-Yukitoki-Test"] == null) {
+                    call.respond(HttpStatusCode.Forbidden, "missing X-Yukitoki-Test")
+                } else {
+                    call.serveBody(supportRange = true)
+                }
+            }
+
             get("/range416") {
                 if (call.request.headers[HttpHeaders.Range] != null) {
                     call.response.headers.append(HttpHeaders.ContentRange, "bytes */${payload.size}")
@@ -172,6 +204,7 @@ class E2EDownloadServer(payloadSize: Int = 512 * 1024) {
     private suspend fun io.ktor.server.application.ApplicationCall.serveBody(
         supportRange: Boolean,
         throttle: Boolean = false,
+        slow: Boolean = false,
     ) {
         if (request.httpMethod == io.ktor.http.HttpMethod.Head) {
             serveHead(supportRange)
@@ -189,7 +222,9 @@ class E2EDownloadServer(payloadSize: Int = 512 * 1024) {
             response.headers.append(HttpHeaders.ContentRange, "bytes $start-$end/${payload.size}")
         }
 
-        if (throttle) {
+        if (slow) {
+            respond(PacedContent(slice, status, slowChunks, slowChunkDelayMs))
+        } else if (throttle) {
             // Paced body with a real Content-Length (so framing is correct and the
             // manager tracks the true total) that drips out over ~1s, leaving a wide
             // window to pause mid-download.
@@ -219,6 +254,28 @@ class E2EDownloadServer(payloadSize: Int = 512 * 1024) {
                 channel.flush()
                 offset = end
                 delay(25)
+            }
+        }
+    }
+
+    /** Writes [data] as [chunks] roughly equal pieces with [delayMs] between them. */
+    private class PacedContent(
+        private val data: ByteArray,
+        override val status: HttpStatusCode,
+        private val chunks: Int,
+        private val delayMs: Long,
+    ) : OutgoingContent.WriteChannelContent() {
+        override val contentLength: Long = data.size.toLong()
+
+        override suspend fun writeTo(channel: io.ktor.utils.io.ByteWriteChannel) {
+            val chunk = maxOf(1, (data.size + chunks - 1) / chunks)
+            var offset = 0
+            while (offset < data.size) {
+                val end = minOf(offset + chunk, data.size)
+                channel.writeFully(data, offset, end)
+                channel.flush()
+                offset = end
+                delay(delayMs)
             }
         }
     }
