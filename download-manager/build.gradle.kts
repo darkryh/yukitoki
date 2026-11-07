@@ -76,7 +76,10 @@ kotlin {
         }
 
         jvmMain.dependencies {
-            implementation(libs.ktor.client.cio)
+            // Named explicitly in platformHttpClient(). The JDK HttpClient has no total
+            // request timeout, so it is also harmless if a consumer's bare HttpClient()
+            // resolves to it through Yukitoki's runtime classpath.
+            implementation(libs.ktor.client.java)
         }
 
         iosMain.dependencies {
