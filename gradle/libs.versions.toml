@@ -1,12 +1,12 @@
 [versions]
 
 # Build & Kotlin Compilation
-kotlin = "2.4.0"
-agp = "8.12.3"
+kotlin = "2.4.21"
+agp = "9.5.1"
 vanniktech-maven-publish = "0.37.0"
 
 # Android
-android-compileSdk = "36"
+android-compileSdk = "37"
 android-minSdk = "26"
 
 # Client HTTP & Networking
@@ -20,7 +20,7 @@ kotlinx-coroutines = "1.11.0"
 kotlinx-browser = "0.5.0"
 
 # Sample app (Compose Multiplatform)
-compose = "1.11.1"
+compose = "1.12.2"
 compose-material3 = "1.9.0"
 compose-material-icons = "1.7.3"
 androidx-activity-compose = "1.10.1"
