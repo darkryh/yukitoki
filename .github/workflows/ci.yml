@@ -49,6 +49,9 @@ jobs:
       - name: Run JVM behavior and end-to-end tests
         run: ./gradlew --no-daemon --stacktrace :download-manager:jvmTest
 
+      - name: Run consumer smoke check under both classpath orders
+        run: ./gradlew --no-daemon --stacktrace :consumer-smoke:consumerSmoke
+
   validate-platforms:
     name: Android, Wasm, Desktop, and publications
     needs: jvm-gate
