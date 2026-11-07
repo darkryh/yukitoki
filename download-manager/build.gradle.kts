@@ -99,3 +99,11 @@ kotlin {
         }
     }
 }
+
+// Robolectric 4.17 sets FileDescriptor internals through jdk.internal.access, which JDK 17+
+// does not export to unnamed modules by default.
+tasks.withType<Test>().configureEach {
+    if (name.contains("AndroidHostTest")) {
+        jvmArgs("--add-exports=java.base/jdk.internal.access=ALL-UNNAMED")
+    }
+}
