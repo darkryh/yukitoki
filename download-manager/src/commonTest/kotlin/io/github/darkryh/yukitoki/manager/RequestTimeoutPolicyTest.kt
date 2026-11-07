@@ -12,6 +12,8 @@ import io.ktor.http.HttpMethod
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.headersOf
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.runTest
@@ -39,9 +41,14 @@ class RequestTimeoutPolicyTest {
 
     private val payload = ByteArray(4096) { (it % 251).toByte() }
 
+    // MockEngine serves parallel segment requests on an IO dispatcher; guard the shared list.
+    private val seenLock = Mutex()
+
     private fun recordingClient(seen: MutableList<Seen>): HttpClient = HttpClient(MockEngine { request ->
         val range = request.headers[HttpHeaders.Range]
-        seen += Seen(request.method, range, request.getCapabilityOrNull(HttpTimeoutCapability)?.requestTimeoutMillis)
+        seenLock.withLock {
+            seen += Seen(request.method, range, request.getCapabilityOrNull(HttpTimeoutCapability)?.requestTimeoutMillis)
+        }
         val common = arrayOf(
             HttpHeaders.AcceptRanges to listOf("bytes"),
             HttpHeaders.ETag to listOf("\"v1\""),

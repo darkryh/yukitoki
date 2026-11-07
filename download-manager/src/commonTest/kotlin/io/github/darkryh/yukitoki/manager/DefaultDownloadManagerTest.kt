@@ -18,6 +18,8 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.flow.take
 import kotlinx.coroutines.yield
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.test.StandardTestDispatcher
@@ -811,6 +813,8 @@ class DefaultDownloadManagerTest {
     fun `segmented download requests byte ranges and merges in order`() = runTest {
         val payload = "abcdefghij".encodeToByteArray()
         val requestedRanges = mutableListOf<String>()
+        // MockEngine serves parallel segment requests on an IO dispatcher; guard the shared list.
+        val rangesLock = Mutex()
         val engine = MockEngine { request ->
             when (request.method) {
                 HttpMethod.Head -> respond(
@@ -824,7 +828,7 @@ class DefaultDownloadManagerTest {
                 )
                 HttpMethod.Get -> {
                     val range = request.headers[HttpHeaders.Range].orEmpty()
-                    requestedRanges += range
+                    rangesLock.withLock { requestedRanges += range }
                     assertEquals("\"v1\"", request.headers[HttpHeaders.IfRange])
                     val (start, end) = range.removePrefix("bytes=").split('-').map { it.toInt() }
                     respond(
@@ -876,12 +880,14 @@ class DefaultDownloadManagerTest {
     fun `segmented download uses range probe when head fails`() = runTest {
         val payload = "abcdefghij".encodeToByteArray()
         val requestedRanges = mutableListOf<String>()
+        // MockEngine serves parallel segment requests on an IO dispatcher; guard the shared list.
+        val rangesLock = Mutex()
         val engine = MockEngine { request ->
             when (request.method) {
                 HttpMethod.Head -> throw IOException("unexpected end of stream on ${request.url}")
                 HttpMethod.Get -> {
                     val range = request.headers[HttpHeaders.Range].orEmpty()
-                    requestedRanges += range
+                    rangesLock.withLock { requestedRanges += range }
                     val (start, end) = range.removePrefix("bytes=").split('-').map { it.toInt() }
                     respond(
                         content = payload.copyOfRange(start, end + 1),
@@ -929,6 +935,8 @@ class DefaultDownloadManagerTest {
     fun `segmented download retries with fewer segments after too many requests`() = runTest {
         val payload = "abcdefgh".encodeToByteArray()
         val requestedRanges = mutableListOf<String>()
+        // MockEngine serves parallel segment requests on an IO dispatcher; guard the shared list.
+        val rangesLock = Mutex()
         var rateLimited = false
         val engine = MockEngine { request ->
             when (request.method) {
@@ -942,9 +950,11 @@ class DefaultDownloadManagerTest {
                 )
                 HttpMethod.Get -> {
                     val range = request.headers[HttpHeaders.Range].orEmpty()
-                    requestedRanges += range
-                    if (!rateLimited && range == "bytes=0-1") {
-                        rateLimited = true
+                    val limitNow = rangesLock.withLock {
+                        requestedRanges += range
+                        (!rateLimited && range == "bytes=0-1").also { if (it) rateLimited = true }
+                    }
+                    if (limitNow) {
                         respond(
                             content = "slow down",
                             status = HttpStatusCode.TooManyRequests,
