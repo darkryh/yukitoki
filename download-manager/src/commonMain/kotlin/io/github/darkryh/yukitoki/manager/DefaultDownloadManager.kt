@@ -27,6 +27,7 @@ import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.seconds
 import kotlin.time.TimeSource
 
+@OptIn(DelicateCoroutinesApi::class)
 public class DefaultDownloadManager internal constructor(
     private val httpClient: HttpClient,
     scope: CoroutineScope,
@@ -98,7 +99,6 @@ public class DefaultDownloadManager internal constructor(
     }
 
     private sealed interface InternalEvent {
-        data class Started(val id: DownloadId, val request: DownloadRequest) : InternalEvent
         data class Progress(val id: DownloadId, val progress: DownloadProgress) : InternalEvent
         data class MetadataLearned(val id: DownloadId, val meta: ServerMetadata) : InternalEvent
         data class Succeeded(val id: DownloadId, val success: DownloadSuccess) : InternalEvent
@@ -172,7 +172,14 @@ public class DefaultDownloadManager internal constructor(
                 DownloadFailure.ManagerClosed(),
             )
         }
-        return reply.await()
+        return awaitUnlessClosed(reply)
+            ?: CommandResult.Rejected("Download manager is shut down", DownloadFailure.ManagerClosed())
+    }
+
+    /** Waits for [reply], or returns null once the manager is gone and nobody will answer. */
+    private suspend fun <T : Any> awaitUnlessClosed(reply: Deferred<T?>): T? = select {
+        reply.onAwait { it }
+        rootJob.onJoin { null }
     }
 
     internal suspend fun submitInternal(command: DownloadCommand): CommandResult = submitCommand(command)
@@ -186,10 +193,7 @@ public class DefaultDownloadManager internal constructor(
         if (closed) return null
         val reply = CompletableDeferred<DownloadResult?>()
         if (!inbox.trySend(InternalMessage.AwaitTerminal(downloadId, reply)).isSuccess) return null
-        return select {
-            reply.onAwait { it }
-            rootJob.onJoin { null }
-        }
+        return awaitUnlessClosed(reply)
     }
 
     override suspend fun enqueue(request: DownloadRequest, id: DownloadId): DownloadTask {
@@ -203,14 +207,17 @@ public class DefaultDownloadManager internal constructor(
 
     override suspend fun download(request: DownloadRequest): DownloadResult {
         val id = DownloadId.new()
-        val ack = submitCommand(DownloadCommand.Enqueue(request, id))
+        // Registered with the enqueue itself, so a download that finishes (and is pruned) before
+        // this caller resumes still delivers its result.
+        val outcome = CompletableDeferred<DownloadResult?>()
+        val ack = submitCommand(DownloadCommand.Enqueue(request, id, outcome))
         if (ack !is CommandResult.Accepted) {
             val reason = (ack as? CommandResult.Rejected)?.reason ?: "Download was rejected"
             return DownloadResult.Failure(
                 (ack as? CommandResult.Rejected)?.failure ?: DownloadFailure.Unexpected(reason)
             )
         }
-        return await(id)
+        return awaitUnlessClosed(outcome)
             ?: DownloadResult.Failure(DownloadFailure.ManagerClosed("Download did not reach a terminal state"))
     }
 
@@ -254,7 +261,11 @@ public class DefaultDownloadManager internal constructor(
         closed = true
         val reply = CompletableDeferred<Unit>()
         if (inbox.trySend(InternalMessage.Shutdown(cancelActive, reply)).isSuccess) {
-            reply.await()
+            // A concurrent shutdown() or close() may end the coordinator before it answers.
+            select {
+                reply.onAwait {}
+                rootJob.onJoin {}
+            }
         }
         rootJob.cancelAndJoin()
     }
@@ -366,6 +377,7 @@ public class DefaultDownloadManager internal constructor(
                         )
                         snapshots[cmd.id] = snapshot
                         enqueueIdByPriority(cmd.id, cmd.request.priority)
+                        cmd.outcome?.let { terminalWaiters.getOrPut(cmd.id) { mutableListOf() }.add(it) }
                         CommandResult.Accepted(cmd.id)
                     } catch (t: Throwable) {
                         val reason = t.message ?: "Unable to reserve the download destination"
@@ -383,31 +395,15 @@ public class DefaultDownloadManager internal constructor(
             is DownloadCommand.Resume -> resumeDownload(cmd.id)
             is DownloadCommand.Cancel -> cancelDownload(cmd.id)
             DownloadCommand.PauseAll -> {
-                (pendingHigh + pendingNormal + pendingLow).forEach { id ->
-                    snapshots[id]?.let { snapshots[id] = it.copy(state = DownloadState.Paused) }
-                }
-                pendingHigh.clear(); pendingNormal.clear(); pendingLow.clear()
-                active.values.forEach { it.job.cancel(PauseCancellationException) }
+                unfinishedIds().forEach(::pauseDownload)
                 CommandResult.Accepted()
             }
             DownloadCommand.ResumeAll -> {
-                snapshots.values.filter { it.state is DownloadState.Paused }.forEach {
-                    snapshots[it.id] = it.copy(state = DownloadState.Queued)
-                    enqueueIdByPriority(it.id, it.request.priority)
-                }
+                unfinishedIds().forEach(::resumeDownload)
                 CommandResult.Accepted()
             }
             DownloadCommand.CancelAll -> {
-                (pendingHigh + pendingNormal + pendingLow).forEach { id ->
-                    snapshots[id]?.let { snap ->
-                        snapshots[id] = snap.copy(state = DownloadState.Cancelled)
-                        serverMetadata.remove(id)
-                        completeWaiters(id, DownloadResult.Cancelled)
-                        markTerminal(id)
-                    }
-                }
-                pendingHigh.clear(); pendingNormal.clear(); pendingLow.clear()
-                active.values.forEach { it.job.cancel(CancellationException("cancel all")) }
+                unfinishedIds().forEach(::cancelDownload)
                 CommandResult.Accepted()
             }
             is DownloadCommand.Retry -> retryDownload(cmd.id)
@@ -428,6 +424,9 @@ public class DefaultDownloadManager internal constructor(
         }
         message.reply.complete(ack)
     }
+
+    private fun unfinishedIds(): List<DownloadId> =
+        snapshots.values.filter { !it.state.isTerminal() }.map { it.id }
 
     private fun retryDownload(id: DownloadId): CommandResult {
         val snap = snapshots[id] ?: return CommandResult.Rejected("Download not found")
@@ -547,13 +546,12 @@ public class DefaultDownloadManager internal constructor(
 
     private fun handleWorkerEvent(event: InternalEvent) {
         when (event) {
-            is InternalEvent.Started -> {
-                val snap = snapshots[event.id] ?: return
-                snapshots[event.id] = snap.copy(state = DownloadState.Starting, attempts = snap.attempts + 1)
-            }
             is InternalEvent.Progress -> {
                 val snap = snapshots[event.id] ?: return
-                snapshots[event.id] = snap.copy(state = DownloadState.Running(event.progress))
+                // Progress already in the inbox must not overwrite a pause or cancel in flight.
+                if (snap.state is DownloadState.Starting || snap.state is DownloadState.Running) {
+                    snapshots[event.id] = snap.copy(state = DownloadState.Running(event.progress))
+                }
             }
             is InternalEvent.MetadataLearned -> {
                 serverMetadata[event.id] = event.meta
@@ -569,8 +567,20 @@ public class DefaultDownloadManager internal constructor(
             }
             is InternalEvent.Failed -> {
                 active.remove(event.id)
-                resumeAfterPause.remove(event.id)
                 val snap = snapshots[event.id] ?: return
+                // The worker failed before it could see a pause or cancel: the user's intent wins.
+                when (snap.state) {
+                    is DownloadState.Cancelling -> {
+                        resumeAfterPause.remove(event.id)
+                        finishCancelled(event.id, snap)
+                        return
+                    }
+                    is DownloadState.Pausing -> {
+                        settlePaused(event.id, snap)
+                        return
+                    }
+                    else -> resumeAfterPause.remove(event.id)
+                }
                 val canRetry = !draining &&
                     snap.attempts < snap.request.retryPolicy.maxAttempts &&
                     shouldRetry(event.failure, snap.request.retryPolicy)
@@ -587,22 +597,45 @@ public class DefaultDownloadManager internal constructor(
             is InternalEvent.Paused -> {
                 active.remove(event.id)
                 val snap = snapshots[event.id] ?: return
-                if (resumeAfterPause.remove(event.id)) {
-                    snapshots[event.id] = snap.copy(state = DownloadState.Queued)
-                    enqueueIdByPriority(event.id, snap.request.priority)
+                // A job keeps its first cancellation cause, so a cancel issued after a pause still
+                // reports here as paused. Cancelling is the later intent and takes priority.
+                if (snap.state is DownloadState.Cancelling) {
+                    resumeAfterPause.remove(event.id)
+                    deletePartialAfterCancel(event.id, snap)
+                    finishCancelled(event.id, snap)
                 } else {
-                    snapshots[event.id] = snap.copy(state = DownloadState.Paused, queuePosition = null)
+                    settlePaused(event.id, snap)
                 }
             }
             is InternalEvent.Cancelled -> {
                 active.remove(event.id)
                 resumeAfterPause.remove(event.id)
-                serverMetadata.remove(event.id)
                 val snap = snapshots[event.id] ?: return
-                snapshots[event.id] = snap.copy(state = DownloadState.Cancelled, queuePosition = null)
-                completeWaiters(event.id, DownloadResult.Cancelled)
-                markTerminal(event.id)
+                finishCancelled(event.id, snap)
             }
+        }
+    }
+
+    private fun settlePaused(id: DownloadId, snap: DownloadSnapshot) {
+        if (resumeAfterPause.remove(id)) {
+            snapshots[id] = snap.copy(state = DownloadState.Queued)
+            enqueueIdByPriority(id, snap.request.priority)
+        } else {
+            snapshots[id] = snap.copy(state = DownloadState.Paused, queuePosition = null)
+        }
+    }
+
+    private fun finishCancelled(id: DownloadId, snap: DownloadSnapshot) {
+        serverMetadata.remove(id)
+        snapshots[id] = snap.copy(state = DownloadState.Cancelled, queuePosition = null)
+        completeWaiters(id, DownloadResult.Cancelled)
+        markTerminal(id)
+    }
+
+    private fun deletePartialAfterCancel(id: DownloadId, snap: DownloadSnapshot) {
+        val destination = snap.resolvedDestination ?: return
+        if (runtimeConfig.deletePartialOnCancel) {
+            runCatching { fileSystem.delete(partialPathFor(destination, id), mustExist = false) }
         }
     }
 
@@ -635,7 +668,12 @@ public class DefaultDownloadManager internal constructor(
                 idleTimeout = runtimeConfig.idleTimeout,
             )
             val knownMetadata = serverMetadata[next]
-            val workerJob = internalScope.launch(ioDispatcher) {
+            // Starting is set here, not by the worker, so a pause or cancel issued before the
+            // worker first runs already sees a cancellable job.
+            snapshots[next] = snapshot.copy(state = DownloadState.Starting, attempts = snapshot.attempts + 1)
+            // ATOMIC: the body always runs, even if cancelled first, so the worker always reports
+            // a terminal event and `active` drains. Otherwise shutdown could wait forever.
+            val workerJob = internalScope.launch(ioDispatcher, start = CoroutineStart.ATOMIC) {
                 runWorker(
                     next,
                     snapshot.request,
@@ -656,12 +694,11 @@ public class DefaultDownloadManager internal constructor(
         config: WorkerConfig,
         knownMetadata: ServerMetadata?,
     ) {
-        var finalPath = destinationPath
-        var partialPath = partialPathFor(finalPath, id)
+        val finalPath = destinationPath
+        val partialPath = partialPathFor(finalPath, id)
 
         try {
-            sendEvent(InternalEvent.Started(id, request))
-            partialPath = partialPathFor(finalPath, id)
+            currentCoroutineContext().ensureActive()
             ensureParentDirectory(finalPath)
             val inlineValidated = writeDownloadToPath(
                 id = id,
@@ -693,7 +730,11 @@ public class DefaultDownloadManager internal constructor(
                     cleanupPartialIfNeeded(partialPath, onCancel = true, config = config)
                     sendEvent(InternalEvent.Cancelled(id))
                 }
-                is Error -> throw t
+                is Error -> {
+                    // Fatal, but the coordinator must not wait forever for this worker.
+                    sendEvent(InternalEvent.Failed(id, DownloadFailure.Unexpected(t.toString())))
+                    throw t
+                }
                 else -> {
                     cleanupPartialIfNeeded(partialPath, onCancel = false, config = config)
                     sendEvent(InternalEvent.Failed(id, mapThrowable(t, finalPath)))
@@ -793,10 +834,10 @@ public class DefaultDownloadManager internal constructor(
             } else null
 
             val sink: BufferedSink = (hashingSink ?: rawSink).buffer()
-            val channel = response.bodyAsChannel()
 
             var inlineValidated = false
             try {
+                val channel = response.bodyAsChannel()
                 val buffer = ByteArray(config.bufferSizeBytes)
                 var downloaded = actualStartOffset
                 val totalLength = if (isAppend && totalBytes != null) (downloadedBytes + totalBytes) else totalBytes

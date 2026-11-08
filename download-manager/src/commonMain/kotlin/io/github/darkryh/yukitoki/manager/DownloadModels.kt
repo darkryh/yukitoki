@@ -268,7 +268,12 @@ public data class DownloadManagerState(
 )
 
 internal sealed interface DownloadCommand {
-    public data class Enqueue(val request: DownloadRequest, val id: DownloadId = DownloadId.new()) : DownloadCommand
+    public data class Enqueue(
+        val request: DownloadRequest,
+        val id: DownloadId = DownloadId.new(),
+        /** Completed with the terminal result; registered atomically with the enqueue. */
+        val outcome: kotlinx.coroutines.CompletableDeferred<DownloadResult?>? = null,
+    ) : DownloadCommand
     public data class Pause(val id: DownloadId) : DownloadCommand
     public data class Resume(val id: DownloadId) : DownloadCommand
     public data class Cancel(val id: DownloadId) : DownloadCommand
