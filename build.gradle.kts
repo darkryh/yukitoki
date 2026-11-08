@@ -2,7 +2,6 @@ plugins {
     // Declared here so the plugins are resolved once for the build and applied
     // (without the version) in each module. Keeps the classloader single-instanced.
     alias(libs.plugins.kotlin.multiplatform) apply false
-    alias(libs.plugins.kotlin.android) apply false
     alias(libs.plugins.kotlin.jvm) apply false
     alias(libs.plugins.android.kotlin.multiplatform.library) apply false
     alias(libs.plugins.android.application) apply false

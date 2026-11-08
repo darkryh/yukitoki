@@ -71,7 +71,6 @@ vanniktech-maven-publish = { module = "com.vanniktech:gradle-maven-publish-plugi
 
 # Build & Kotlin Plugins
 kotlin-multiplatform = { id = "org.jetbrains.kotlin.multiplatform", version.ref = "kotlin" }
-kotlin-android = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }
 kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
 
 # Android Plugins
@@ -81,4 +80,3 @@ android-application = { id = "com.android.application", version.ref = "agp" }
 # Compose Multiplatform (sample app)
 compose = { id = "org.jetbrains.compose", version.ref = "compose" }
 compose-compiler = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
-vanniktech-maven-publish = { id = "com.vanniktech.maven.publish", version.ref = "vanniktech-maven-publish" }
