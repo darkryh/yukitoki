@@ -7,12 +7,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0-beta07] - 2026-11-08
+
+### Changed
+
+- After `close()`, `shutdown()`, or a cancelled scope, every unfinished download is `Cancelled` in `state`. `await` keeps working: a saved file returns `Success`, where it used to return `Failure(ManagerClosed)` or null. A call waiting at `close()` now gets `Cancelled`.
+- A destination without a file name now percent-decodes the URL's last segment, so `annual%20report.pdf` saves as `annual report.pdf`, not `annual20report.pdf`.
+- Single-stream requests now send `Accept-Encoding: identity`, as segments already did.
+- A cross-origin browser download without headers can no longer replace your app. A page the browser can display opens in a new tab from a click, and loads in a hidden frame outside one.
+
+### Fixed
+
+- `close()` and a cancelled scope left the `.part` file of a paused download on disk, and `state` kept showing downloads as `Running`.
+- A connection that dropped mid-body was never retried. It's now retried and resumes.
+- A failed attempt deleted its `.part` file before retrying, so each retry restarted from zero.
+- Each pause and resume used up a retry attempt.
+- An I/O error from the network was reported as `FileSystem`, and not retried, unless its message contained a recognized word. Failures are now classified by where they happened.
+- On iOS, every network failure (refused connection, lost connection, unknown host, TLS) was reported as `Unexpected` and not retried. It's now `Network`.
+- A connect or socket timeout from the engine was reported as `Network` instead of `Timeout`.
+- An `IllegalStateException` from an engine was reported as `FileSystem`. It's now `Unexpected`.
+- Resuming without an `ETag` or `Last-Modified` could splice two versions of a file. It now starts over.
+- A `416` on resume failed the download permanently. It now starts over.
+- A server that advertised ranges and answered a slice with the whole file failed with `HttpStatus(200)`. It now falls back to one stream.
+- A slice with a different validator than the probe saw was accepted. It now fails with `ServerChanged`.
+- An engine that decompresses a body, such as Darwin, could fail with `SizeMismatch` against the compressed `Content-Length`.
+- A failed delete while cleaning up could stop a worker from reporting, which left it in `active` forever.
+- A URL ending in `..` was used as a file name, and a URL with no path used its host.
+- The browser's `Rejected` reason exposed Kotlin's exception wrapper.
+- The sample app drew under the Android status bar.
+
 ### Documentation
 
 - Fixed examples that hung forever: code placed after a bare `collect` on `task.state` or `observe(id)` never runs.
 - The custom Ktor client example now names the engine dependency it needs.
-- Corrected the threading, ownership, resume, and segmentation descriptions, and documented what `await` and `state` do after `close()` and `shutdown()`.
-- Documented that cross-origin browser downloads ignore `fileName`, can navigate the tab away, and need CORS with headers.
+- Corrected the threading, ownership, resume, and segmentation descriptions.
+- Documented that cross-origin browser downloads ignore `fileName` and need CORS with headers.
 
 ## [1.0.0-beta06] - 2026-11-08
 
@@ -215,6 +244,7 @@ First public beta of the Yukitoki Kotlin Multiplatform download manager.
 - **Sample app** — a shared Compose Multiplatform UI running on Android, iOS, and desktop.
 
 [Unreleased]: https://github.com/darkryh/yukitoki/compare/v1.0.0-beta06...HEAD
+[1.0.0-beta07]: https://github.com/darkryh/yukitoki/compare/v1.0.0-beta06...v1.0.0-beta07
 [1.0.0-beta06]: https://github.com/darkryh/yukitoki/compare/v1.0.0-beta05...v1.0.0-beta06
 [1.0.0-beta05]: https://github.com/darkryh/yukitoki/compare/v1.0.0-beta04...v1.0.0-beta05
 [1.0.0-beta04]: https://github.com/darkryh/yukitoki/compare/v1.0.0-beta03...v1.0.0-beta04

@@ -22,7 +22,9 @@ val policy = RetryPolicy(
 )
 ```
 
-Use `RetryPolicy.Default` or `RetryPolicy.None` for common cases. Yukitoki retries network failures, timeouts, and configured HTTP 5xx/408/429 responses. Numeric `Retry-After` is honored.
+Use `RetryPolicy.Default` or `RetryPolicy.None` for common cases. Yukitoki retries network failures, timeouts, connections that drop before the promised bytes arrive, and configured HTTP 5xx/408/429 responses. Numeric `Retry-After` is honored. A retry keeps what the failed attempt wrote and resumes from there when the server gave a validator. Pausing doesn't use up attempts.
+
+A connection that keeps dropping ends as `SizeMismatch`, because the bytes that arrived don't match the promised length.
 
 The independent stream-stall guard is configured globally:
 

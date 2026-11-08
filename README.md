@@ -9,7 +9,7 @@ The browser target exposes download intents because browsers do not expose an or
 The latest release is:
 
 ```kotlin
-implementation("io.github.darkryh.yukitoki:download-manager:1.0.0-beta06")
+implementation("io.github.darkryh.yukitoki:download-manager:1.0.0-beta07")
 ```
 
 The artifact bundles an appropriate Ktor engine for Android, JVM, and iOS.

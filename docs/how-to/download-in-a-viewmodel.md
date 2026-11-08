@@ -21,6 +21,6 @@ class DownloadsViewModel : ViewModel() {
 }
 ```
 
-`close()` is immediate and non-suspending. `manager.state` stops updating after it, which is fine here because the ViewModel is going away. If the manager should outlive the ViewModel, create it in an application-level owner and inject it instead.
+`close()` is immediate and non-suspending. It stops unfinished downloads and removes their partial files. If the manager should outlive the ViewModel, create it in an application-level owner and inject it instead.
 
 Yukitoki remains in-process; a ViewModel does not make transfers persistent across process death.

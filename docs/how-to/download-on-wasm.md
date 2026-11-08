@@ -18,7 +18,7 @@ when (result) {
 
 `Dispatched` means the browser accepted the click-equivalent action. It does not mean the transfer completed and does not expose progress or the final path. `DownloadManager.create()` intentionally rejects browser use.
 
-Browsers honor the `download` attribute only for same-origin URLs. For a cross-origin URL without headers, the browser ignores `fileName` and decides for itself. A file it can't display is saved under the name from the URL. A page it can display **navigates the current tab away**, and `dispatch` still returns `Dispatched`. If the file comes from another origin, have that server send `Content-Disposition: attachment`, or use the `fetch()` path below.
+Browsers honor the `download` attribute only for same-origin URLs. For a cross-origin URL without headers, the browser ignores `fileName` and decides for itself. A file it can't display is saved under the name from the URL. A page it can display **doesn't download**, and `dispatch` still returns `Dispatched`. It opens in a new tab if you dispatched from a click. Outside a click, browsers block new tabs, so Yukitoki loads the URL in a hidden frame and nothing appears. Your app keeps running either way. If the file comes from another origin, have that server send `Content-Disposition: attachment`, or use the `fetch()` path below.
 
 ## Authenticated downloads (with headers)
 
@@ -52,5 +52,6 @@ document export, a report, a small archive), not large files. A non-2xx response
 failure both surface as `DownloadIntentResult.Rejected` with a description of what went wrong.
 
 A cross-origin server must allow the request through CORS, including every header you send. Without
-that, the browser blocks the request and you get `Rejected` with a generic "Failed to fetch" reason.
+that, the browser blocks the request and you get `Rejected`. The browser doesn't say why, so the
+reason names both a network error and CORS as possible causes.
 `fileName` is honored on this path, even across origins.
