@@ -133,12 +133,14 @@ class SegmentationPolicyTest {
     @Test
     fun `parallelism recovers after rate limiting as downloads succeed`() = runTest {
         val recorder = Recorder()
+        val rangeRequests = AtomicInt(0)
         val manager = manager(
             HttpClient(MockEngine { request ->
                 recorder.add(request)
+                // Only the first: it may cancel its siblings before they ever send a request.
                 val limited = request.url.encodedPath == "/limited.bin" &&
                     request.headers[HttpHeaders.Range] != null &&
-                    recorder.segmentRequests("limited.bin") <= 4
+                    rangeRequests.addAndFetch(1) == 1
                 if (limited) {
                     respond("", HttpStatusCode.TooManyRequests, headersOf(HttpHeaders.RetryAfter, "0"))
                 } else {
