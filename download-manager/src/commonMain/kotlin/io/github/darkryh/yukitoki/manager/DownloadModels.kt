@@ -268,24 +268,24 @@ public data class DownloadManagerState(
 )
 
 internal sealed interface DownloadCommand {
-    public data class Enqueue(
+    data class Enqueue(
         val request: DownloadRequest,
         val id: DownloadId = DownloadId.new(),
         /** Completed with the terminal result; registered atomically with the enqueue. */
         val outcome: kotlinx.coroutines.CompletableDeferred<DownloadResult?>? = null,
     ) : DownloadCommand
-    public data class Pause(val id: DownloadId) : DownloadCommand
-    public data class Resume(val id: DownloadId) : DownloadCommand
-    public data class Cancel(val id: DownloadId) : DownloadCommand
-    public data object PauseAll : DownloadCommand
-    public data object ResumeAll : DownloadCommand
-    public data object CancelAll : DownloadCommand
-    public data class Retry(val id: DownloadId) : DownloadCommand
-    public data object RetryAllFailed : DownloadCommand
-    public data class MoveWithinPriority(val id: DownloadId, val newPosition: Int) : DownloadCommand
-    public data class Remove(val id: DownloadId, val deleteFile: Boolean) : DownloadCommand
-    public data object ClearFinished : DownloadCommand
-    public data class SetConcurrency(val concurrency: DownloadConcurrency) : DownloadCommand
+    data class Pause(val id: DownloadId) : DownloadCommand
+    data class Resume(val id: DownloadId) : DownloadCommand
+    data class Cancel(val id: DownloadId) : DownloadCommand
+    data object PauseAll : DownloadCommand
+    data object ResumeAll : DownloadCommand
+    data object CancelAll : DownloadCommand
+    data class Retry(val id: DownloadId) : DownloadCommand
+    data object RetryAllFailed : DownloadCommand
+    data class MoveWithinPriority(val id: DownloadId, val newPosition: Int) : DownloadCommand
+    data class Remove(val id: DownloadId, val deleteFile: Boolean) : DownloadCommand
+    data object ClearFinished : DownloadCommand
+    data class SetConcurrency(val concurrency: DownloadConcurrency) : DownloadCommand
 }
 
 public sealed interface CommandResult {

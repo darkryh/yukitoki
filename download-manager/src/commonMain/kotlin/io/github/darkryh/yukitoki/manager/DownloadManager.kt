@@ -143,7 +143,7 @@ private class OwnedDownloadManager(
         }
     }
 
-    public override fun close() {
+    override fun close() {
         try {
             delegate.close()
         } finally {
