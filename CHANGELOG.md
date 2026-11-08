@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Documentation
+
+- Fixed examples that hung forever: code placed after a bare `collect` on `task.state` or `observe(id)` never runs.
+- The custom Ktor client example now names the engine dependency it needs.
+- Corrected the threading, ownership, resume, and segmentation descriptions, and documented what `await` and `state` do after `close()` and `shutdown()`.
+- Documented that cross-origin browser downloads ignore `fileName`, can navigate the tab away, and need CORS with headers.
+
 ## [1.0.0-beta06] - 2026-11-08
 
 A deliberately breaking release: the library has no external users yet, so the API changes with no
