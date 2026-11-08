@@ -5,17 +5,19 @@ import io.ktor.client.engine.cio.CIO
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.mapNotNull
+import kotlinx.coroutines.flow.toList
+import kotlinx.coroutines.flow.transformWhile
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import okio.FileSystem
 import okio.Path
 import okio.Path.Companion.toPath
 import java.security.MessageDigest
-import java.util.concurrent.CopyOnWriteArrayList
 import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
@@ -83,19 +85,23 @@ class DownloadStateRaceE2ETest {
     }
 
     @Test
-    fun `progress already in flight never overwrites a pause`() = withManager { manager ->
+    fun `a paused download stays paused while bytes are flowing`() = withManager { manager ->
         val task = manager.enqueue(slowRequest("a.bin", DownloadSegmentation.Single))
-        val states = CopyOnWriteArrayList<DownloadState>()
-        val collector = launch(Dispatchers.Unconfined) {
-            manager.state.collect { state -> state.snapshots[task.id]?.state?.let(states::add) }
+        val observed = async(Dispatchers.Unconfined) {
+            manager.state
+                .mapNotNull { it.snapshots[task.id]?.state }
+                .transformWhile { state ->
+                    emit(state)
+                    state !is DownloadState.Paused
+                }
+                .toList()
         }
         manager.awaitRunning(task.id)
         task.pause()
-        manager.awaitPaused(task.id)
-        collector.cancel()
+        val states = observed.await()
 
-        val afterPause = states.dropWhile { it !is DownloadState.Pausing }
-        assertTrue(afterPause.isNotEmpty(), "states=$states")
+        // Pausing is transient: it is not published when Paused arrives in the same batch.
+        val afterPause = states.dropWhile { it !is DownloadState.Pausing && it !is DownloadState.Paused }
         assertTrue(afterPause.none { it is DownloadState.Running }, "state went backwards: $afterPause")
     }
 

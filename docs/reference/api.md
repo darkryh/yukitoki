@@ -43,7 +43,7 @@ Invalid request construction throws `IllegalArgumentException`. A rejected publi
 
 `DownloadState` progresses through queued, starting, running, pausing/paused, cancelling/cancelled, succeeded, or failed. `DownloadSnapshot.resolvedDestination` contains the concrete path reserved during enqueue.
 
-`DownloadManager.state` contains snapshots, pending IDs, active IDs, and `maxConcurrentDownloads`. `observe(id)` watches one ID; `await(id)` returns null for an unknown or already-pruned ID.
+`DownloadManager.state` contains snapshots, pending IDs, active IDs, and `maxConcurrentDownloads`. `observe(id)` watches one ID; `await(id)` returns null for an unknown or already-pruned ID. `state` is a `StateFlow`, so it can skip intermediate values: `Pausing` and `Cancelling` may never be observed before `Paused` and `Cancelled`.
 
 ## Queue commands
 

@@ -4,6 +4,8 @@ import io.ktor.client.HttpClient
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.respond
 import io.ktor.http.HttpStatusCode
+import io.ktor.utils.io.ByteChannel
+import io.ktor.utils.io.writeFully
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -301,6 +303,60 @@ class DownloadStateMachineTest {
 
         val settled = manager.state.first { it.snapshots[id]?.state.let { state -> state is DownloadState.Paused || state is DownloadState.Failed } }
         assertIs<DownloadState.Paused>(settled.snapshots[id]?.state)
+        manager.close()
+    }
+
+    /** Runs [beforeWrite] during each write, which the worker follows with a progress report. */
+    private class OnWriteFileSystem(
+        delegate: FileSystem,
+        private val beforeWrite: () -> Unit,
+    ) : ForwardingFileSystem(delegate) {
+        override fun openReadWrite(file: Path, mustCreate: Boolean, mustExist: Boolean): FileHandle {
+            val handle = super.openReadWrite(file, mustCreate, mustExist)
+            return object : FileHandle(readWrite = true) {
+                override fun protectedResize(size: Long) = handle.resize(size)
+                override fun protectedSize(): Long = handle.size()
+                override fun protectedRead(fileOffset: Long, array: ByteArray, arrayOffset: Int, byteCount: Int): Int =
+                    handle.read(fileOffset, array, arrayOffset, byteCount)
+                override fun protectedWrite(fileOffset: Long, array: ByteArray, arrayOffset: Int, byteCount: Int) {
+                    beforeWrite()
+                    handle.write(fileOffset, array, arrayOffset, byteCount)
+                }
+                override fun protectedFlush() = handle.flush()
+                override fun protectedClose() = handle.close()
+            }
+        }
+    }
+
+    @Test
+    fun `progress already in the inbox does not overwrite a pause`() = runTest(timeout = testTimeout) {
+        val id = DownloadId.new()
+        val scope = this
+        // Bytes are ready but the body never ends, so the worker reports progress and then waits.
+        val body = ByteChannel(autoFlush = true)
+        body.writeFully("payload".encodeToByteArray())
+        lateinit var manager: DefaultDownloadManager
+        manager = DefaultDownloadManager(
+            httpClient = HttpClient(MockEngine { respond(body, HttpStatusCode.OK) }),
+            scope = backgroundScope,
+            // The pause enters the inbox here, ahead of the progress the worker is about to send.
+            fileSystem = OnWriteFileSystem(SynchronizedFileSystem(FakeFileSystem())) {
+                scope.launch(start = CoroutineStart.UNDISPATCHED) { manager.pause(id) }
+            },
+            config = DownloadManagerConfig(idleTimeout = Duration.ZERO),
+            ioDispatcher = StandardTestDispatcher(testScheduler),
+            timeSource = testScheduler.timeSource,
+            random = Random(seed = 0),
+        )
+        val observed = mutableListOf<DownloadState>()
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+            manager.state.collect { state -> state.snapshots[id]?.state?.let(observed::add) }
+        }
+
+        manager.submitCommand(DownloadCommand.Enqueue(request("j.bin"), id))
+        manager.state.first { it.snapshots[id]?.state is DownloadState.Paused }
+
+        assertEquals(emptyList(), observed.filterIsInstance<DownloadState.Running>(), "states=$observed")
         manager.close()
     }
 
