@@ -9,14 +9,6 @@ val result = task.await()
 manager.close()
 ```
 
-Advanced construction:
-
-```kotlin
-val manager = DefaultDownloadManager(
-    httpClient = configuredClient,
-    scope = applicationScope,
-)
-```
 
 `DefaultDownloadManager` borrows injected resources. `DownloadManager.create()` owns its automatically-created resources.
 

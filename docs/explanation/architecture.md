@@ -11,7 +11,8 @@ between them:
 
 1. **One implementation, every target.** The queue, state machine, retry logic, and resume logic live
    in `commonMain`. Only genuinely platform-specific pieces — the I/O dispatcher, the filesystem, the
-   default download directory, browser intents — are `expect`/`actual`.
+   HTTP engine, the free-space check, the default download directory, browser intents — are
+   `expect`/`actual`.
 2. **Never block the UI thread.** The library must be safe to drive directly from `viewModelScope`,
    which runs on `Dispatchers.Main`.
 3. **Correct files or no files.** A download either produces a byte-perfect file at the destination or
@@ -25,7 +26,7 @@ between them:
 
 All mutable queue state — what's pending, what's active, each download's state, the concurrency limit
 — lives behind a single coordinator that processes messages one at a time. Commands (`enqueue`,
-`pause`, `setConcurrency`, …) and internal events (a worker started, made progress, succeeded, failed)
+`pause`, `setMaxConcurrentDownloads`, …) and internal events (a worker made progress, succeeded, failed)
 are funnelled through this single-writer loop.
 
 This is the **actor model**, and it's a deliberate alternative to sprinkling locks over shared state:
@@ -142,9 +143,10 @@ correctly whether an error is worth retrying.
 Browsers don't give Kotlin/Wasm a writable Downloads directory, so the whole `.part`-then-move model
 doesn't apply there. Rather than pretend, Yukitoki offers a distinct, honest API for the browser:
 `DownloadIntents.dispatch` hands the download to the browser and returns once the browser accepts it.
-It explicitly does not promise byte progress, a final path, checksums, or custom headers — because on
-that platform the browser, not Yukitoki, owns the transfer. For anything needing auth or verification
-on wasm, the recommended pattern is a server-issued signed URL.
+It explicitly does not promise byte progress, a final path, or checksums — because on that platform
+the browser, not Yukitoki, owns the transfer. Requests with custom headers go through a buffered
+`fetch()` instead, which suits bounded-size payloads; for large authenticated files, prefer a
+server-issued signed URL.
 
 ## The ownership model
 

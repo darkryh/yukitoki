@@ -4,11 +4,11 @@ Queue concurrency controls the number of active files:
 
 ```kotlin
 val config = DownloadManagerConfig(
-    concurrency = DownloadConcurrency.Fixed(2),
+    maxConcurrentDownloads = 2,
 )
 ```
 
-`DownloadConcurrency.Default` currently means three active downloads. It is named `Default`, not `Auto`, because it is a stable default rather than a device heuristic.
+The default is three active downloads. Change it at runtime with `manager.setMaxConcurrentDownloads(n)`.
 
 Segmentation controls parallel range requests for one file:
 

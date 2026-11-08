@@ -25,7 +25,7 @@ val task = manager.enqueue("https://example.com/report.pdf")
 task.state.collect { snapshot -> println(snapshot?.state) }
 
 when (val result = task.await()) {
-    is DownloadResult.Success -> println("Saved to ${result.success.finalPath}")
+    is DownloadResult.Success -> println("Saved to ${result.file.path}")
     is DownloadResult.Failure -> println("Failed: ${result.failure}")
     DownloadResult.Cancelled -> println("Cancelled")
 }

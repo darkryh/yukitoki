@@ -33,8 +33,7 @@ manager.moveWithinPriority(id, newPosition = 0)
 Change active-download concurrency at runtime:
 
 ```kotlin
-manager.setConcurrency(DownloadConcurrency.Fixed(2))
-manager.setConcurrency(DownloadConcurrency.Default)
+manager.setMaxConcurrentDownloads(2)
 ```
 
 Finished snapshots are bounded by `maxRetainedFinished`. Remove them explicitly with `remove(id, deleteFile)` or `clearFinished()`.

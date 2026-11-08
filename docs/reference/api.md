@@ -4,7 +4,6 @@
 
 - `DownloadManager.create(config, configureClient)` creates a manager with owned resources and a client on the bundled platform engine (Java on JVM, OkHttp on Android, Darwin on iOS). `configureClient` runs after Yukitoki's defaults.
 - `DownloadManager.create(httpClient, scope, config)` borrows caller-owned resources.
-- `DefaultDownloadManager(...)` is the advanced constructor for custom filesystems, dispatchers, and tests.
 
 Managed filesystem downloads are available on Android, JVM, and iOS. `DownloadLocations.isSupported` is false in the browser.
 
@@ -21,10 +20,10 @@ Managed filesystem downloads are available on Android, JVM, and iOS. `DownloadLo
 
 - `url`
 - `destination`
-- `headers` (caller-supplied `Range` is rejected)
+- `headers` (a `Range` header throws `IllegalArgumentException`; ranges are managed internally)
 - `overwritePolicy` (`DEFAULT` renames directory collisions and rejects exact-file collisions)
 - `retryPolicy`
-- `expectedSizeBytes`
+- `expectedBytes`
 - `progressGranularity`
 - `priority`
 - `segmentation`
@@ -32,9 +31,11 @@ Managed filesystem downloads are available on Android, JVM, and iOS. `DownloadLo
 
 ## Tasks and results
 
-`enqueue` returns `DownloadTask`, containing `id`, `state`, `await`, `pause`, `resume`, `cancel`, and `retry`.
+`enqueue(request)` and `enqueue(url, destination, priority)` return `DownloadTask`, containing `id`, `state`, `await`, `pause`, `resume`, `cancel`, and `retry`. `download(request)` enqueues and suspends until the download finishes.
 
-`DownloadResult` is `Success`, `Cancelled`, or `Failure`. Runtime failures are represented by `DownloadFailure`: HTTP status, network, timeout, permission, space, collision, filesystem, integrity, checksum, remote-file change, unsupported capability, closed manager, or unexpected failure.
+`DownloadResult` is `Success(file)`, `Cancelled`, or `Failure(failure)`. `DownloadedFile` holds the final `path` and `sizeBytes`.
+
+`DownloadFailure` is one of `HttpStatus`, `Network`, `Timeout`, `PermissionDenied`, `NoSpace`, `AlreadyExists`, `FileSystem`, `SizeMismatch`, `ChecksumMismatch`, `ServerChanged`, `ManagerClosed`, or `Unexpected`.
 
 Invalid request construction throws `IllegalArgumentException`. A rejected public `enqueue` throws `DownloadRejectedException` carrying its typed failure. `download(request)` returns the typed failure instead.
 
@@ -42,24 +43,32 @@ Invalid request construction throws `IllegalArgumentException`. A rejected publi
 
 `DownloadState` progresses through queued, starting, running, pausing/paused, cancelling/cancelled, succeeded, or failed. `DownloadSnapshot.resolvedDestination` contains the concrete path reserved during enqueue.
 
-`DownloadManager.state` contains snapshots, pending IDs, active IDs, and current concurrency. `observe(id)` watches one ID; `await(id)` returns null for an unknown or already-pruned ID.
+`DownloadManager.state` contains snapshots, pending IDs, active IDs, and `maxConcurrentDownloads`. `observe(id)` watches one ID; `await(id)` returns null for an unknown or already-pruned ID.
 
 ## Queue commands
 
 - `pause`, `resume`, `cancel`, `retry`
 - `pauseAll`, `resumeAll`, `cancelAll`, `retryAllFailed`
 - `moveWithinPriority(id, position)` — reorders only inside the task's priority tier.
-- `setConcurrency(Default | Fixed(n))`
+- `setMaxConcurrentDownloads(n)` — throws `IllegalArgumentException` below 1.
 - `remove(id, deleteFile)`
 - `clearFinished()`
 
-Commands return `CommandResult.Accepted` or `Rejected`.
+Commands return `CommandResult.Accepted` or a `CommandResult.Rejected`:
+
+- `NotFound` — no download has this ID.
+- `InvalidState(state)` — the command doesn't fit the download's current state.
+- `InvalidPosition(position)` — the position is outside the priority queue.
+- `ManagerClosed` — the manager is shutting down or closed.
+- `Failed(failure)` — the command was valid, but carrying it out failed.
+
+`pauseAll`, `resumeAll` and `cancelAll` apply to every unfinished download, including those waiting for a retry.
 
 ## Configuration
 
 `DownloadManagerConfig`:
 
-- `concurrency = DownloadConcurrency.Default` (currently three active downloads)
+- `maxConcurrentDownloads = 3`
 - `bufferSizeBytes = 64 KiB`
 - `deletePartialOnFailure = true`
 - `deletePartialOnCancel = true`
@@ -68,10 +77,10 @@ Commands return `CommandResult.Accepted` or `Rejected`.
 
 `RetryPolicy` uses `Duration` and supplies `Default` and `None`. `ProgressGranularity` uses a byte delta and `minInterval: Duration`. ETA is exposed as `Duration?`.
 
-`DownloadSegmentation` is `Auto`, `Single`, or `MaxSegments(n)`. `MaxSegments` is a ceiling; Yukitoki can reduce it or fall back when a server cannot safely serve ranges.
+`DownloadSegmentation` is `Auto`, `Single`, or `MaxSegments(count)`. `MaxSegments` is a ceiling; Yukitoki can reduce it or fall back when a server cannot safely serve ranges.
 
 ## Browser intents
 
-`DownloadIntents.dispatch(DownloadIntentRequest(url, suggestedFileName, headers))` returns `DownloadIntentResult.Dispatched` or `Rejected`. `Dispatched` only means that the browser accepted the action; it does not claim completion, progress, or a final filesystem path.
+`DownloadIntents.dispatch(DownloadIntentRequest(url, fileName, headers))` returns `DownloadIntentResult.Dispatched` or `Rejected`. `Dispatched` only means that the browser accepted the action; it does not claim completion, progress, or a final filesystem path.
 
 `DownloadIntentRequest.headers` (`io.ktor.http.Headers`, default `Headers.Empty`) is only honored on wasm. Empty headers take the original plain `<a download>` anchor-navigation path. Non-empty headers switch to a `fetch()`-backed path that carries those headers, buffers the whole response as a `Blob`, and saves it via a short-lived `blob:` object URL — no streaming, no progress; suitable only for bounded-size authenticated payloads. See [Browser downloads](../how-to/download-on-wasm.md#authenticated-downloads-with-headers). On every non-wasm platform, `dispatch` always returns `Rejected`, so `headers` has no effect there.
