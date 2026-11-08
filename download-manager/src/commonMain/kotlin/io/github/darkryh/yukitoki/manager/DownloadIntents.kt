@@ -15,12 +15,12 @@ import io.ktor.http.Headers
  */
 public data class DownloadIntentRequest(
     public val url: String,
-    public val suggestedFileName: String? = null,
+    public val fileName: String? = null,
     public val headers: Headers = Headers.Empty,
 ) {
     init {
         require(url.isNotBlank()) { "url must not be blank" }
-        suggestedFileName?.let(::validateIntentFileName)
+        fileName?.let(::validateDownloadFileName)
     }
 }
 
@@ -48,24 +48,18 @@ public object DownloadIntents {
 }
 
 internal expect object PlatformDownloadIntentDispatcher {
-    public val isSupported: Boolean
-    public suspend fun dispatch(request: DownloadIntentRequest): DownloadIntentResult
+    val isSupported: Boolean
+    suspend fun dispatch(request: DownloadIntentRequest): DownloadIntentResult
 }
 
 internal fun intentFileNameFor(request: DownloadIntentRequest): String =
-    request.suggestedFileName?.takeIf { it.isNotBlank() }?.sanitizeDownloadFileName()
+    request.fileName?.takeIf { it.isNotBlank() }?.sanitizeDownloadFileName()
         ?: request.url.substringBefore('?')
             .substringBefore('#')
             .substringAfterLast('/', "")
             .takeIf { it.isNotBlank() }
             ?.sanitizeDownloadFileName()
         ?: "download.bin"
-
-private fun validateIntentFileName(fileName: String) {
-    require(fileName.isNotBlank()) { "suggestedFileName must not be blank" }
-    require(fileName != "." && fileName != "..") { "suggestedFileName must be a file name" }
-    require(fileName.none { it == '/' || it == '\\' }) { "suggestedFileName must not contain path separators" }
-}
 
 private fun String.sanitizeDownloadFileName(): String =
     filter { it.isLetterOrDigit() || it == '.' || it == '-' || it == '_' || it == ' ' }

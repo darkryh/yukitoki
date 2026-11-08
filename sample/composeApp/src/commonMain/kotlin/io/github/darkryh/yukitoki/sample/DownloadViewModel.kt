@@ -1,6 +1,5 @@
 package io.github.darkryh.yukitoki.sample
 
-import io.github.darkryh.yukitoki.manager.DownloadConcurrency
 import io.github.darkryh.yukitoki.manager.DownloadManager
 import io.github.darkryh.yukitoki.manager.DownloadPriority
 import io.github.darkryh.yukitoki.sample.ui.DownloadUiIntent
@@ -71,11 +70,11 @@ class DownloadViewModel {
             }
             is DownloadUiIntent.DecreaseConcurrency -> {
                 val currentConcurrency = state.value.maxConcurrentDownloads
-                scope.launch { manager.setConcurrency(DownloadConcurrency.Fixed((currentConcurrency - 1).coerceAtLeast(1))) }
+                scope.launch { manager.setMaxConcurrentDownloads((currentConcurrency - 1).coerceAtLeast(1)) }
             }
             is DownloadUiIntent.IncreaseConcurrency -> {
                 val currentConcurrency = state.value.maxConcurrentDownloads
-                scope.launch { manager.setConcurrency(DownloadConcurrency.Fixed(currentConcurrency + 1)) }
+                scope.launch { manager.setMaxConcurrentDownloads(currentConcurrency + 1) }
             }
         }
     }

@@ -117,7 +117,7 @@ class DownloadManagerE2ETest {
     @Test
     fun `plain download writes exact bytes`() = runE2E { manager ->
         val id = DownloadId.new()
-        val ack = manager.submitInternal(DownloadCommand.Enqueue(DownloadRequest(server.url("/file"), dest("a.bin")), id))
+        val ack = manager.submitCommand(DownloadCommand.Enqueue(DownloadRequest(server.url("/file"), dest("a.bin")), id))
         assertIs<CommandResult.Accepted>(ack)
         val result = manager.await(id)
         assertIs<DownloadResult.Success>(result)
@@ -128,7 +128,7 @@ class DownloadManagerE2ETest {
     fun `download one-shot succeeds`() = runE2E { manager ->
         val result = manager.download(DownloadRequest(server.url("/file"), dest("one.bin")))
         assertIs<DownloadResult.Success>(result)
-        assertEquals(server.payload.size.toLong(), result.success.bytesDownloaded)
+        assertEquals(server.payload.size.toLong(), result.file.sizeBytes)
         assertContentEquals(server.payload, readBytes(dest("one.bin")))
     }
 
@@ -141,7 +141,7 @@ class DownloadManagerE2ETest {
                 (snap.state as? DownloadState.Running)?.let { samples.add(it.progress.bytesDownloaded) }
             }
         }
-        manager.submitInternal(DownloadCommand.Enqueue(DownloadRequest(server.url("/throttled"), dest("p.bin")), id))
+        manager.submitCommand(DownloadCommand.Enqueue(DownloadRequest(server.url("/throttled"), dest("p.bin")), id))
         val result = manager.await(id)
         collector.cancel()
         assertIs<DownloadResult.Success>(result)
@@ -155,7 +155,7 @@ class DownloadManagerE2ETest {
     @Test
     fun `segmented parallel download reconstructs file`() = runE2E { manager ->
         val id = DownloadId.new()
-        val ack = manager.submitInternal(
+        val ack = manager.submitCommand(
             DownloadCommand.Enqueue(DownloadRequest(server.url("/file"), dest("seg.bin"), segmentation = DownloadSegmentation.MaxSegments(4)), id)
         )
         val result = manager.await(id)
@@ -166,7 +166,7 @@ class DownloadManagerE2ETest {
     @Test
     fun `segmented falls back to single stream when server lacks range`() = runE2E { manager ->
         val id = DownloadId.new()
-        manager.submitInternal(
+        manager.submitCommand(
             DownloadCommand.Enqueue(DownloadRequest(server.url("/norange"), dest("fb.bin"), segmentation = DownloadSegmentation.MaxSegments(4)), id)
         )
         val result = manager.await(id)
@@ -177,7 +177,7 @@ class DownloadManagerE2ETest {
     @Test
     fun `segmented uses range probe when head fails on real sockets`() = runE2E { manager ->
         val id = DownloadId.new()
-        manager.submitInternal(
+        manager.submitCommand(
             DownloadCommand.Enqueue(DownloadRequest(server.url("/brokenhead"), dest("brokenhead.bin"), segmentation = DownloadSegmentation.MaxSegments(4)), id)
         )
         val result = manager.await(id)
@@ -188,7 +188,7 @@ class DownloadManagerE2ETest {
     @Test
     fun `segmented reduces pressure after 429 and completes on real sockets`() = runE2E { manager ->
         val id = DownloadId.new()
-        manager.submitInternal(
+        manager.submitCommand(
             DownloadCommand.Enqueue(DownloadRequest(server.url("/ratelimitedsegment"), dest("rl.bin"), segmentation = DownloadSegmentation.MaxSegments(4)), id)
         )
         val result = manager.await(id)
@@ -201,11 +201,11 @@ class DownloadManagerE2ETest {
     @Test
     fun `pause then resume completes via range request`() = runE2E { manager ->
         val id = DownloadId.new()
-        manager.submitInternal(DownloadCommand.Enqueue(DownloadRequest(server.url("/throttled"), dest("pr.bin")), id))
+        manager.submitCommand(DownloadCommand.Enqueue(DownloadRequest(server.url("/throttled"), dest("pr.bin")), id))
         manager.awaitSnapshot(id) { it.runningBytes() >= 32 * 1024 || it.state is DownloadState.Succeeded }
-        manager.submitInternal(DownloadCommand.Pause(id))
+        manager.submitCommand(DownloadCommand.Pause(id))
         manager.awaitSnapshot(id) { it.state is DownloadState.Paused }
-        manager.submitInternal(DownloadCommand.Resume(id))
+        manager.submitCommand(DownloadCommand.Resume(id))
         val result = manager.await(id)
         assertIs<DownloadResult.Success>(result)
         assertContentEquals(server.payload, readBytes(dest("pr.bin")))
@@ -217,7 +217,7 @@ class DownloadManagerE2ETest {
     fun `sha-256 checksum validates`() = runE2E { manager ->
         val hex = hashHex("SHA-256", server.payload)
         val id = DownloadId.new()
-        manager.submitInternal(
+        manager.submitCommand(
             DownloadCommand.Enqueue(
                 DownloadRequest(
                     server.url("/file"), dest("sha.bin"),
@@ -232,7 +232,7 @@ class DownloadManagerE2ETest {
     @Test
     fun `md5 checksum mismatch fails terminally`() = runE2E { manager ->
         val id = DownloadId.new()
-        manager.submitInternal(
+        manager.submitCommand(
             DownloadCommand.Enqueue(
                 DownloadRequest(
                     server.url("/file"), dest("md5.bin"),
@@ -254,7 +254,7 @@ class DownloadManagerE2ETest {
         val path = dest("exists.bin")
         fs.write(path) { writeUtf8("old") }
         val id = DownloadId.new()
-        val ack = manager.submitInternal(
+        val ack = manager.submitCommand(
             DownloadCommand.Enqueue(
                 DownloadRequest(server.url("/file"), path, overwritePolicy = OverwritePolicy.FAIL_IF_EXISTS, retryPolicy = noRetry()),
                 id,
@@ -268,7 +268,7 @@ class DownloadManagerE2ETest {
         val path = dest("doc.bin")
         fs.write(path) { writeUtf8("original") }
         val id = DownloadId.new()
-        manager.submitInternal(
+        manager.submitCommand(
             DownloadCommand.Enqueue(
                 DownloadRequest(server.url("/file"), path, overwritePolicy = OverwritePolicy.RENAME_UNIQUE),
                 id,
@@ -276,8 +276,8 @@ class DownloadManagerE2ETest {
         )
         val result = manager.await(id)
         assertIs<DownloadResult.Success>(result)
-        assertTrue(result.success.finalPath.name.contains("(1)"), "expected a uniquified name, got ${result.success.finalPath}")
-        assertContentEquals(server.payload, readBytes(result.success.finalPath))
+        assertTrue(result.file.path.name.contains("(1)"), "expected a uniquified name, got ${result.file.path}")
+        assertContentEquals(server.payload, readBytes(result.file.path))
         assertEquals("original", fs.read(path) { readUtf8() })
     }
 
@@ -286,7 +286,7 @@ class DownloadManagerE2ETest {
         val path = dest("replace.bin")
         fs.write(path) { writeUtf8("junk-junk-junk") }
         val id = DownloadId.new()
-        manager.submitInternal(
+        manager.submitCommand(
             DownloadCommand.Enqueue(DownloadRequest(server.url("/file"), path, overwritePolicy = OverwritePolicy.REPLACE), id)
         )
         assertIs<DownloadResult.Success>(manager.await(id))
@@ -299,7 +299,7 @@ class DownloadManagerE2ETest {
     @Test
     fun `retries on 503 then succeeds and counts attempts`() = runE2E { manager ->
         val id = DownloadId.new()
-        manager.submitInternal(
+        manager.submitCommand(
             DownloadCommand.Enqueue(
                 DownloadRequest(
                     server.url("/flaky/r1?fail=2"), dest("flaky.bin"),
@@ -319,7 +319,7 @@ class DownloadManagerE2ETest {
     @Test
     fun `http 404 fails without retry`() = runE2E { manager ->
         val id = DownloadId.new()
-        manager.submitInternal(
+        manager.submitCommand(
             DownloadCommand.Enqueue(DownloadRequest(server.url("/notfound"), dest("nf.bin"), retryPolicy = RetryPolicy.Default), id)
         )
         val result = manager.await(id)
@@ -333,7 +333,7 @@ class DownloadManagerE2ETest {
     @Test
     fun `retry command revives a failed download`() = runE2E { manager ->
         val id = DownloadId.new()
-        manager.submitInternal(
+        manager.submitCommand(
             DownloadCommand.Enqueue(
                 DownloadRequest(
                     server.url("/flaky/r2?fail=1"),
@@ -345,7 +345,7 @@ class DownloadManagerE2ETest {
             )
         )
         assertIs<DownloadResult.Failure>(manager.await(id))
-        manager.submitInternal(DownloadCommand.Retry(id))
+        manager.submitCommand(DownloadCommand.Retry(id))
         assertIs<DownloadResult.Success>(manager.await(id))
     }
 
@@ -354,7 +354,7 @@ class DownloadManagerE2ETest {
     @Test
     fun `redirect is followed`() = runE2E { manager ->
         val id = DownloadId.new()
-        manager.submitInternal(DownloadCommand.Enqueue(DownloadRequest(server.url("/redirect"), dest("rd.bin")), id))
+        manager.submitCommand(DownloadCommand.Enqueue(DownloadRequest(server.url("/redirect"), dest("rd.bin")), id))
         val result = manager.await(id)
         assertIs<DownloadResult.Success>(result)
         assertContentEquals(server.payload, readBytes(dest("rd.bin")))
@@ -365,7 +365,7 @@ class DownloadManagerE2ETest {
     @Test
     fun `idle timeout fails a stalled stream`() = runE2E(config = DownloadManagerConfig(idleTimeout = 300.milliseconds)) { manager ->
         val id = DownloadId.new()
-        manager.submitInternal(
+        manager.submitCommand(
             DownloadCommand.Enqueue(DownloadRequest(server.url("/stall"), dest("stall.bin"), retryPolicy = noRetry()), id)
         )
         val result = manager.await(id)
@@ -376,7 +376,7 @@ class DownloadManagerE2ETest {
     @Test
     fun `chunked body without content length downloads exact bytes`() = runE2E { manager ->
         val id = DownloadId.new()
-        manager.submitInternal(DownloadCommand.Enqueue(DownloadRequest(server.url("/chunked"), dest("chunked.bin")), id))
+        manager.submitCommand(DownloadCommand.Enqueue(DownloadRequest(server.url("/chunked"), dest("chunked.bin")), id))
         val result = manager.await(id)
         assertIs<DownloadResult.Success>(result)
         assertContentEquals(server.payload, readBytes(dest("chunked.bin")))
@@ -385,7 +385,7 @@ class DownloadManagerE2ETest {
     @Test
     fun `truncated body fails integrity validation`() = runE2E { manager ->
         val id = DownloadId.new()
-        manager.submitInternal(
+        manager.submitCommand(
             DownloadCommand.Enqueue(
                 DownloadRequest(
                     server.url("/truncated"),
@@ -399,19 +399,19 @@ class DownloadManagerE2ETest {
         val result = manager.await(id)
         assertIs<DownloadResult.Failure>(result)
         assertTrue(
-            result.failure is DownloadFailure.IntegrityMismatch || result.failure is DownloadFailure.Timeout,
+            result.failure is DownloadFailure.SizeMismatch || result.failure is DownloadFailure.Timeout,
             "truncated real-socket response must not succeed; got ${result.failure}",
         )
     }
 
     @Test
-    fun `expected size mismatch fails with IntegrityMismatch`() = runE2E { manager ->
+    fun `expected size mismatch fails with SizeMismatch`() = runE2E { manager ->
         val id = DownloadId.new()
-        manager.submitInternal(
+        manager.submitCommand(
             DownloadCommand.Enqueue(
                 DownloadRequest(
                     server.url("/file"), dest("size.bin"),
-                    expectedSizeBytes = server.payload.size + 1L,
+                    expectedBytes = server.payload.size + 1L,
                     retryPolicy = noRetry(),
                 ),
                 id,
@@ -419,17 +419,17 @@ class DownloadManagerE2ETest {
         )
         val result = manager.await(id)
         assertIs<DownloadResult.Failure>(result)
-        assertIs<DownloadFailure.IntegrityMismatch>(result.failure)
+        assertIs<DownloadFailure.SizeMismatch>(result.failure)
     }
 
     @Test
     fun `server changed mid-resume yields ServerChanged`() = runE2E { manager ->
         val id = DownloadId.new()
-        manager.submitInternal(DownloadCommand.Enqueue(DownloadRequest(server.url("/changedetag"), dest("ce.bin"), retryPolicy = noRetry()), id))
+        manager.submitCommand(DownloadCommand.Enqueue(DownloadRequest(server.url("/changedetag"), dest("ce.bin"), retryPolicy = noRetry()), id))
         manager.awaitSnapshot(id) { it.runningBytes() >= 32 * 1024 || it.state is DownloadState.Succeeded }
-        manager.submitInternal(DownloadCommand.Pause(id))
+        manager.submitCommand(DownloadCommand.Pause(id))
         manager.awaitSnapshot(id) { it.state is DownloadState.Paused }
-        manager.submitInternal(DownloadCommand.Resume(id))
+        manager.submitCommand(DownloadCommand.Resume(id))
         val result = manager.await(id)
         assertIs<DownloadResult.Failure>(result)
         assertIs<DownloadFailure.ServerChanged>(result.failure)
@@ -442,7 +442,7 @@ class DownloadManagerE2ETest {
         val partPath = "$path.yukitoki-${id.value}.part".toPath()
         fs.write(partPath) { write(ByteArray(server.payload.size + 128) { 1 }) }
 
-        manager.submitInternal(
+        manager.submitCommand(
             DownloadCommand.Enqueue(
                 DownloadRequest(
                     server.url("/range416"),
@@ -462,13 +462,13 @@ class DownloadManagerE2ETest {
     // --- concurrency / priority / ordering ---------------------------------------
 
     @Test
-    fun `concurrency bound is respected`() = runE2E(config = DownloadManagerConfig(concurrency = DownloadConcurrency.Fixed(2))) { manager ->
+    fun `concurrency bound is respected`() = runE2E(config = DownloadManagerConfig(maxConcurrentDownloads = 2)) { manager ->
         var maxActive = 0
         val watcher = launch {
             manager.state.collect { maxActive = maxOf(maxActive, it.active.size) }
         }
         val ids = (1..6).map { i ->
-            DownloadId.new().also { manager.submitInternal(DownloadCommand.Enqueue(DownloadRequest(server.url("/throttled"), dest("c$i.bin")), it)) }
+            DownloadId.new().also { manager.submitCommand(DownloadCommand.Enqueue(DownloadRequest(server.url("/throttled"), dest("c$i.bin")), it)) }
         }
         ids.forEach { assertIs<DownloadResult.Success>(manager.await(it)) }
         watcher.cancel()
@@ -477,32 +477,32 @@ class DownloadManagerE2ETest {
     }
 
     @Test
-    fun `high priority runs before normal`() = runE2E(config = DownloadManagerConfig(concurrency = DownloadConcurrency.Fixed(1))) { manager ->
+    fun `high priority runs before normal`() = runE2E(config = DownloadManagerConfig(maxConcurrentDownloads = 1)) { manager ->
         val blocker = DownloadId.new()
-        manager.submitInternal(DownloadCommand.Enqueue(DownloadRequest(server.url("/throttled"), dest("block.bin")), blocker))
+        manager.submitCommand(DownloadCommand.Enqueue(DownloadRequest(server.url("/throttled"), dest("block.bin")), blocker))
         manager.awaitSnapshot(blocker) { it.state is DownloadState.Running }
 
         val normal = DownloadId.new()
         val high = DownloadId.new()
-        manager.submitInternal(DownloadCommand.Enqueue(DownloadRequest(server.url("/throttled"), dest("n.bin"), priority = DownloadPriority.NORMAL), normal))
-        manager.submitInternal(DownloadCommand.Enqueue(DownloadRequest(server.url("/throttled"), dest("h.bin"), priority = DownloadPriority.HIGH), high))
+        manager.submitCommand(DownloadCommand.Enqueue(DownloadRequest(server.url("/throttled"), dest("n.bin"), priority = DownloadPriority.NORMAL), normal))
+        manager.submitCommand(DownloadCommand.Enqueue(DownloadRequest(server.url("/throttled"), dest("h.bin"), priority = DownloadPriority.HIGH), high))
 
         val order = trackTerminalOrder(manager, mapOf(high to "high", normal to "normal"))
         assertEquals(listOf("high", "normal"), order)
     }
 
     @Test
-    fun `move reorders within the queue`() = runE2E(config = DownloadManagerConfig(concurrency = DownloadConcurrency.Fixed(1))) { manager ->
+    fun `move reorders within the queue`() = runE2E(config = DownloadManagerConfig(maxConcurrentDownloads = 1)) { manager ->
         val blocker = DownloadId.new()
-        manager.submitInternal(DownloadCommand.Enqueue(DownloadRequest(server.url("/throttled"), dest("mblock.bin")), blocker))
+        manager.submitCommand(DownloadCommand.Enqueue(DownloadRequest(server.url("/throttled"), dest("mblock.bin")), blocker))
         manager.awaitSnapshot(blocker) { it.state is DownloadState.Running }
 
         val a = DownloadId.new(); val b = DownloadId.new(); val c = DownloadId.new()
-        manager.submitInternal(DownloadCommand.Enqueue(DownloadRequest(server.url("/throttled"), dest("ma.bin")), a))
-        manager.submitInternal(DownloadCommand.Enqueue(DownloadRequest(server.url("/throttled"), dest("mb.bin")), b))
-        manager.submitInternal(DownloadCommand.Enqueue(DownloadRequest(server.url("/throttled"), dest("mc.bin")), c))
+        manager.submitCommand(DownloadCommand.Enqueue(DownloadRequest(server.url("/throttled"), dest("ma.bin")), a))
+        manager.submitCommand(DownloadCommand.Enqueue(DownloadRequest(server.url("/throttled"), dest("mb.bin")), b))
+        manager.submitCommand(DownloadCommand.Enqueue(DownloadRequest(server.url("/throttled"), dest("mc.bin")), c))
         // Pull c to the front of the pending tier.
-        assertIs<CommandResult.Accepted>(manager.submitInternal(DownloadCommand.MoveWithinPriority(c, 0)))
+        assertIs<CommandResult.Accepted>(manager.submitCommand(DownloadCommand.MoveWithinPriority(c, 0)))
 
         val order = trackTerminalOrder(manager, mapOf(a to "a", b to "b", c to "c"))
         assertEquals("c", order.first(), "moved item should finish first; order was $order")
@@ -511,33 +511,33 @@ class DownloadManagerE2ETest {
     // --- bulk commands -----------------------------------------------------------
 
     @Test
-    fun `cancel all stops every download`() = runE2E(config = DownloadManagerConfig(concurrency = DownloadConcurrency.Fixed(2))) { manager ->
+    fun `cancel all stops every download`() = runE2E(config = DownloadManagerConfig(maxConcurrentDownloads = 2)) { manager ->
         val ids = (1..4).map { i ->
-            DownloadId.new().also { manager.submitInternal(DownloadCommand.Enqueue(DownloadRequest(server.url("/throttled"), dest("ca$i.bin")), it)) }
+            DownloadId.new().also { manager.submitCommand(DownloadCommand.Enqueue(DownloadRequest(server.url("/throttled"), dest("ca$i.bin")), it)) }
         }
         manager.awaitSnapshot(ids.first()) { it.state is DownloadState.Running }
-        manager.submitInternal(DownloadCommand.CancelAll)
+        manager.submitCommand(DownloadCommand.CancelAll)
         ids.forEach { id ->
             assertIs<DownloadResult.Cancelled>(manager.await(id))
         }
     }
 
     @Test
-    fun `pause all then resume all completes every download`() = runE2E(config = DownloadManagerConfig(concurrency = DownloadConcurrency.Fixed(2))) { manager ->
+    fun `pause all then resume all completes every download`() = runE2E(config = DownloadManagerConfig(maxConcurrentDownloads = 2)) { manager ->
         val ids = (1..3).map { i ->
-            DownloadId.new().also { manager.submitInternal(DownloadCommand.Enqueue(DownloadRequest(server.url("/throttled"), dest("pa$i.bin")), it)) }
+            DownloadId.new().also { manager.submitCommand(DownloadCommand.Enqueue(DownloadRequest(server.url("/throttled"), dest("pa$i.bin")), it)) }
         }
         manager.awaitSnapshot(ids.first()) { it.state is DownloadState.Running }
-        manager.submitInternal(DownloadCommand.PauseAll)
+        manager.submitCommand(DownloadCommand.PauseAll)
         ids.forEach { id -> manager.awaitSnapshot(id) { it.state is DownloadState.Paused } }
-        manager.submitInternal(DownloadCommand.ResumeAll)
+        manager.submitCommand(DownloadCommand.ResumeAll)
         ids.forEach { id -> assertIs<DownloadResult.Success>(manager.await(id)) }
     }
 
     @Test
     fun `retry all failed revives failed downloads`() = runE2E { manager ->
         val a = DownloadId.new(); val b = DownloadId.new()
-        manager.submitInternal(
+        manager.submitCommand(
             DownloadCommand.Enqueue(
                 DownloadRequest(
                     server.url("/flaky/ra1?fail=1"),
@@ -548,7 +548,7 @@ class DownloadManagerE2ETest {
                 a,
             )
         )
-        manager.submitInternal(
+        manager.submitCommand(
             DownloadCommand.Enqueue(
                 DownloadRequest(
                     server.url("/flaky/ra2?fail=1"),
@@ -561,20 +561,12 @@ class DownloadManagerE2ETest {
         )
         assertIs<DownloadResult.Failure>(manager.await(a))
         assertIs<DownloadResult.Failure>(manager.await(b))
-        manager.submitInternal(DownloadCommand.RetryAllFailed)
+        manager.submitCommand(DownloadCommand.RetryAllFailed)
         assertIs<DownloadResult.Success>(manager.await(a))
         assertIs<DownloadResult.Success>(manager.await(b))
     }
 
     // --- rejection contract ------------------------------------------------------
-
-    @Test
-    fun `caller supplied range header is rejected`() = runE2E { manager ->
-        val ack = manager.submitInternal(
-            DownloadCommand.Enqueue(DownloadRequest(server.url("/file"), dest("range.bin"), headers = headersOf("Range", "bytes=0-10")))
-        )
-        assertIs<CommandResult.Rejected>(ack)
-    }
 
     // --- ordering helper ---------------------------------------------------------
 

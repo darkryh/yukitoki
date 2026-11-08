@@ -207,10 +207,10 @@ fun DownloadRow(
                 Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                     val progress = (state as? DownloadState.Running)?.progress
                     val bytesDownloaded = progress?.bytesDownloaded
-                        ?: (state as? DownloadState.Succeeded)?.result?.bytesDownloaded
+                        ?: (state as? DownloadState.Succeeded)?.file?.sizeBytes
                         ?: 0L
                     val totalBytes = progress?.totalBytes
-                        ?: (state as? DownloadState.Succeeded)?.result?.totalBytes
+                        ?: (state as? DownloadState.Succeeded)?.file?.sizeBytes
 
                     val sizeText = if (totalBytes != null) {
                         "${formatBytes(bytesDownloaded)} / ${formatBytes(totalBytes)}"

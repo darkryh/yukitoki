@@ -28,35 +28,19 @@ import kotlin.time.Duration.Companion.seconds
 import kotlin.time.TimeSource
 
 @OptIn(DelicateCoroutinesApi::class)
-public class DefaultDownloadManager internal constructor(
+internal class DefaultDownloadManager(
     private val httpClient: HttpClient,
     scope: CoroutineScope,
-    private val fileSystem: FileSystem,
-    private val config: DownloadManagerConfig,
-    private val ioDispatcher: CoroutineDispatcher,
+    private val fileSystem: FileSystem = PlatformDownloadFileSystem.default,
+    private val config: DownloadManagerConfig = DownloadManagerConfig(),
+    private val ioDispatcher: CoroutineDispatcher = platformIoDispatcher,
     // Time source for origin-pacing decisions. Defaults to the monotonic clock (immune to
     // NTP steps); tests inject the coroutine test scheduler's time source so pacing delays
     // advance in lockstep with delay() under virtual time instead of racing the wall clock.
-    private val timeSource: TimeSource.WithComparableMarks,
+    private val timeSource: TimeSource.WithComparableMarks = TimeSource.Monotonic,
     // Jitter source for adaptive rate-limit back-off; injectable so tests are reproducible.
-    private val random: Random,
+    private val random: Random = Random.Default,
 ) : DownloadManager {
-    public constructor(
-        httpClient: HttpClient,
-        scope: CoroutineScope,
-        fileSystem: FileSystem = PlatformDownloadFileSystem.default,
-        config: DownloadManagerConfig = DownloadManagerConfig(),
-        ioDispatcher: CoroutineDispatcher = platformIoDispatcher,
-    ) : this(
-        httpClient = httpClient,
-        scope = scope,
-        fileSystem = fileSystem,
-        config = config,
-        ioDispatcher = ioDispatcher,
-        timeSource = TimeSource.Monotonic,
-        random = Random.Default,
-    )
-
     private data class ServerMetadata(
         val eTag: String?,
         val lastModified: String?,
@@ -85,7 +69,7 @@ public class DefaultDownloadManager internal constructor(
     private sealed interface InternalEvent {
         data class Progress(val id: DownloadId, val progress: DownloadProgress) : InternalEvent
         data class MetadataLearned(val id: DownloadId, val meta: ServerMetadata) : InternalEvent
-        data class Succeeded(val id: DownloadId, val success: DownloadSuccess) : InternalEvent
+        data class Succeeded(val id: DownloadId, val file: DownloadedFile) : InternalEvent
         data class Failed(val id: DownloadId, val failure: DownloadFailure) : InternalEvent
         data class Paused(val id: DownloadId) : InternalEvent
         data class Cancelled(val id: DownloadId) : InternalEvent
@@ -109,7 +93,7 @@ public class DefaultDownloadManager internal constructor(
     @Volatile
     private var closed = false
 
-    private var maxConcurrentDownloads = resolveConcurrentDownloads(config.concurrency)
+    private var maxConcurrentDownloads = config.maxConcurrentDownloads
 
     /** Pending queues in dispatch order: [DownloadPriority] declares HIGH first. */
     private val pendingByPriority = DownloadPriority.entries.associateWith { ArrayDeque<DownloadId>() }
@@ -143,20 +127,13 @@ public class DefaultDownloadManager internal constructor(
         internalScope.launch { coordinatorLoop() }
     }
 
-    private suspend fun submitCommand(command: DownloadCommand): CommandResult {
-        if (closed) return CommandResult.Rejected(
-            "Download manager is shut down",
-            DownloadFailure.ManagerClosed(),
-        )
+    internal suspend fun submitCommand(command: DownloadCommand): CommandResult {
+        if (closed) return CommandResult.Rejected.ManagerClosed
         val reply = CompletableDeferred<CommandResult>()
         if (!inbox.trySend(InternalMessage.UserCommand(command, reply)).isSuccess) {
-            return CommandResult.Rejected(
-                "Download manager is shut down",
-                DownloadFailure.ManagerClosed(),
-            )
+            return CommandResult.Rejected.ManagerClosed
         }
-        return awaitUnlessClosed(reply)
-            ?: CommandResult.Rejected("Download manager is shut down", DownloadFailure.ManagerClosed())
+        return awaitUnlessClosed(reply) ?: CommandResult.Rejected.ManagerClosed
     }
 
     /** Waits for [reply], or returns null once the manager is gone and nobody will answer. */
@@ -164,8 +141,6 @@ public class DefaultDownloadManager internal constructor(
         reply.onAwait { it }
         rootJob.onJoin { null }
     }
-
-    internal suspend fun submitInternal(command: DownloadCommand): CommandResult = submitCommand(command)
 
     override val state: StateFlow<DownloadManagerState> = _state.asStateFlow()
 
@@ -179,29 +154,27 @@ public class DefaultDownloadManager internal constructor(
         return awaitUnlessClosed(reply)
     }
 
-    override suspend fun enqueue(request: DownloadRequest, id: DownloadId): DownloadTask {
+    override suspend fun enqueue(request: DownloadRequest): DownloadTask {
+        val id = DownloadId.new()
         return when (val ack = submitCommand(DownloadCommand.Enqueue(request, id))) {
-            is CommandResult.Accepted -> ManagedDownloadTask(ack.id ?: id)
-            is CommandResult.Rejected -> throw DownloadRejectedException(
-                ack.failure ?: DownloadFailure.Unexpected(ack.reason)
-            )
+            CommandResult.Accepted -> ManagedDownloadTask(id)
+            is CommandResult.Rejected -> throw DownloadRejectedException(ack.toFailure())
         }
     }
 
     override suspend fun download(request: DownloadRequest): DownloadResult {
-        val id = DownloadId.new()
         // Registered with the enqueue itself, so a download that finishes (and is pruned) before
         // this caller resumes still delivers its result.
         val outcome = CompletableDeferred<DownloadResult?>()
-        val ack = submitCommand(DownloadCommand.Enqueue(request, id, outcome))
-        if (ack !is CommandResult.Accepted) {
-            val reason = (ack as? CommandResult.Rejected)?.reason ?: "Download was rejected"
-            return DownloadResult.Failure(
-                (ack as? CommandResult.Rejected)?.failure ?: DownloadFailure.Unexpected(reason)
-            )
-        }
-        return awaitUnlessClosed(outcome)
-            ?: DownloadResult.Failure(DownloadFailure.ManagerClosed("Download did not reach a terminal state"))
+        val ack = submitCommand(DownloadCommand.Enqueue(request, DownloadId.new(), outcome))
+        if (ack is CommandResult.Rejected) return DownloadResult.Failure(ack.toFailure())
+        return awaitUnlessClosed(outcome) ?: DownloadResult.Failure(DownloadFailure.ManagerClosed)
+    }
+
+    private fun CommandResult.Rejected.toFailure(): DownloadFailure = when (this) {
+        is CommandResult.Rejected.Failed -> failure
+        CommandResult.Rejected.ManagerClosed -> DownloadFailure.ManagerClosed
+        else -> DownloadFailure.Unexpected(toString())
     }
 
     override suspend fun pause(downloadId: DownloadId): CommandResult =
@@ -231,8 +204,10 @@ public class DefaultDownloadManager internal constructor(
     override suspend fun retryAllFailed(): CommandResult =
         submitCommand(DownloadCommand.RetryAllFailed)
 
-    override suspend fun setConcurrency(concurrency: DownloadConcurrency): CommandResult =
-        submitCommand(DownloadCommand.SetConcurrency(concurrency))
+    override suspend fun setMaxConcurrentDownloads(max: Int): CommandResult {
+        require(max >= 1) { "max must be >= 1" }
+        return submitCommand(DownloadCommand.SetMaxConcurrentDownloads(max))
+    }
 
     override suspend fun remove(downloadId: DownloadId, deleteFile: Boolean): CommandResult =
         submitCommand(DownloadCommand.Remove(downloadId, deleteFile))
@@ -262,7 +237,7 @@ public class DefaultDownloadManager internal constructor(
         override val state: Flow<DownloadSnapshot?> = observe(id)
         override suspend fun await(): DownloadResult =
             this@DefaultDownloadManager.await(id)
-                ?: DownloadResult.Failure(DownloadFailure.ManagerClosed())
+                ?: DownloadResult.Failure(DownloadFailure.ManagerClosed)
         override suspend fun pause(): CommandResult = this@DefaultDownloadManager.pause(id)
         override suspend fun resume(): CommandResult = this@DefaultDownloadManager.resume(id)
         override suspend fun cancel(): CommandResult = this@DefaultDownloadManager.cancel(id)
@@ -332,7 +307,7 @@ public class DefaultDownloadManager internal constructor(
 
     private fun handleUserCommand(message: InternalMessage.UserCommand) {
         if (draining) {
-            message.reply.complete(CommandResult.Rejected("Download manager is shutting down"))
+            message.reply.complete(CommandResult.Rejected.ManagerClosed)
             return
         }
         val ack = when (val cmd = message.command) {
@@ -342,27 +317,27 @@ public class DefaultDownloadManager internal constructor(
             is DownloadCommand.Cancel -> cancelDownload(cmd.id)
             DownloadCommand.PauseAll -> {
                 unfinishedIds().forEach(::pauseDownload)
-                CommandResult.Accepted()
+                CommandResult.Accepted
             }
             DownloadCommand.ResumeAll -> {
                 unfinishedIds().forEach(::resumeDownload)
-                CommandResult.Accepted()
+                CommandResult.Accepted
             }
             DownloadCommand.CancelAll -> {
                 unfinishedIds().forEach(::cancelDownload)
-                CommandResult.Accepted()
+                CommandResult.Accepted
             }
             is DownloadCommand.Retry -> retryDownload(cmd.id)
             DownloadCommand.RetryAllFailed -> {
                 snapshots.values.filter { it.state is DownloadState.Failed }
                     .map { it.id }
                     .forEach(::retryDownload)
-                CommandResult.Accepted()
+                CommandResult.Accepted
             }
             is DownloadCommand.MoveWithinPriority -> moveWithinPriorityDownload(cmd.id, cmd.newPosition)
-            is DownloadCommand.SetConcurrency -> {
-                maxConcurrentDownloads = resolveConcurrentDownloads(cmd.concurrency)
-                CommandResult.Accepted()
+            is DownloadCommand.SetMaxConcurrentDownloads -> {
+                maxConcurrentDownloads = cmd.max
+                CommandResult.Accepted
             }
             is DownloadCommand.Remove -> removeDownload(cmd.id, cmd.deleteFile)
             DownloadCommand.ClearFinished -> clearFinishedDownloads()
@@ -371,20 +346,13 @@ public class DefaultDownloadManager internal constructor(
     }
 
     private fun enqueueDownload(cmd: DownloadCommand.Enqueue): CommandResult {
-        if (cmd.id in snapshots) return CommandResult.Rejected("Duplicate download id: ${cmd.id.value}")
-        cmd.request.unsupportedByDefaultManagerReason()?.let { reason ->
-            return CommandResult.Rejected(reason, DownloadFailure.Unsupported(reason))
+        if (cmd.id in snapshots) {
+            return CommandResult.Rejected.Failed(DownloadFailure.Unexpected("Duplicate download id: ${cmd.id.value}"))
         }
         val resolvedDestination = try {
             reserveDestination(cmd.request, cmd.id, discardStalePartial = true)
         } catch (t: Throwable) {
-            val reason = t.message ?: "Unable to reserve the download destination"
-            val failure = when (t) {
-                is DownloadFileExistsException -> DownloadFailure.AlreadyExists(t.path, reason)
-                is IOException, is IllegalStateException -> DownloadFailure.FileSystem(reason)
-                else -> DownloadFailure.Unexpected(reason)
-            }
-            return CommandResult.Rejected(reason, failure)
+            return CommandResult.Rejected.Failed(t.toReservationFailure())
         }
         snapshots[cmd.id] = DownloadSnapshot(
             id = cmd.id,
@@ -396,21 +364,30 @@ public class DefaultDownloadManager internal constructor(
         )
         enqueueIdByPriority(cmd.id, cmd.request.priority)
         cmd.outcome?.let { terminalWaiters.getOrPut(cmd.id) { mutableListOf() }.add(it) }
-        return CommandResult.Accepted(cmd.id)
+        return CommandResult.Accepted
+    }
+
+    private fun Throwable.toReservationFailure(): DownloadFailure {
+        val reason = message ?: "Unable to reserve the download destination"
+        return when (this) {
+            is DownloadFileExistsException -> DownloadFailure.AlreadyExists(path)
+            is IOException, is IllegalStateException -> DownloadFailure.FileSystem(reason)
+            else -> DownloadFailure.Unexpected(reason)
+        }
     }
 
     private fun unfinishedIds(): List<DownloadId> =
         snapshots.values.filter { !it.state.isTerminal() }.map { it.id }
 
     private fun retryDownload(id: DownloadId): CommandResult {
-        val snap = snapshots[id] ?: return CommandResult.Rejected("Download not found")
+        val snap = snapshots[id] ?: return CommandResult.Rejected.NotFound
         if (snap.state !is DownloadState.Failed && snap.state !is DownloadState.Cancelled) {
-            return CommandResult.Rejected("Retry is only valid for failed/cancelled downloads")
+            return CommandResult.Rejected.InvalidState(snap.state)
         }
         val resolved = try {
             reserveDestination(snap.request, id)
         } catch (t: Throwable) {
-            return CommandResult.Rejected(t.message ?: "Unable to reserve the download destination")
+            return CommandResult.Rejected.Failed(t.toReservationFailure())
         }
         snapshots[id] = snap.copy(
             state = DownloadState.Queued,
@@ -419,46 +396,46 @@ public class DefaultDownloadManager internal constructor(
         )
         terminalOrder.remove(id)
         enqueueIdByPriority(id, snap.request.priority)
-        return CommandResult.Accepted(id)
+        return CommandResult.Accepted
     }
 
     private fun pauseDownload(id: DownloadId): CommandResult {
-        val snap = snapshots[id] ?: return CommandResult.Rejected("Download not found")
+        val snap = snapshots[id] ?: return CommandResult.Rejected.NotFound
         when (snap.state) {
             is DownloadState.Queued -> {
                 removeFromPending(id)
                 snapshots[id] = snap.copy(state = DownloadState.Paused)
-                return CommandResult.Accepted(id)
+                return CommandResult.Accepted
             }
             is DownloadState.Starting, is DownloadState.Running -> {
                 snapshots[id] = snap.copy(state = DownloadState.Pausing)
                 active[id]?.cancel(PauseCancellationException)
-                return CommandResult.Accepted(id)
+                return CommandResult.Accepted
             }
-            is DownloadState.Paused, is DownloadState.Pausing -> return CommandResult.Accepted(id)
-            else -> return CommandResult.Rejected("Pause not allowed in ${snap.state::class.simpleName}")
+            is DownloadState.Paused, is DownloadState.Pausing -> return CommandResult.Accepted
+            else -> return CommandResult.Rejected.InvalidState(snap.state)
         }
     }
 
     private fun resumeDownload(id: DownloadId): CommandResult {
-        val snap = snapshots[id] ?: return CommandResult.Rejected("Download not found")
+        val snap = snapshots[id] ?: return CommandResult.Rejected.NotFound
         return when (snap.state) {
             is DownloadState.Paused -> {
                 snapshots[id] = snap.copy(state = DownloadState.Queued)
                 enqueueIdByPriority(id, snap.request.priority)
-                CommandResult.Accepted(id)
+                CommandResult.Accepted
             }
             is DownloadState.Pausing -> {
                 resumeAfterPause.add(id)
-                CommandResult.Accepted(id)
+                CommandResult.Accepted
             }
-            is DownloadState.Queued, is DownloadState.Starting, is DownloadState.Running -> CommandResult.Accepted(id)
-            else -> CommandResult.Rejected("Resume not allowed in ${snap.state::class.simpleName}")
+            is DownloadState.Queued, is DownloadState.Starting, is DownloadState.Running -> CommandResult.Accepted
+            else -> CommandResult.Rejected.InvalidState(snap.state)
         }
     }
 
     private fun cancelDownload(id: DownloadId): CommandResult {
-        val snap = snapshots[id] ?: return CommandResult.Rejected("Download not found")
+        val snap = snapshots[id] ?: return CommandResult.Rejected.NotFound
         return when (snap.state) {
             is DownloadState.Queued, is DownloadState.Paused -> {
                 removeFromPending(id)
@@ -466,52 +443,54 @@ public class DefaultDownloadManager internal constructor(
                 serverMetadata.remove(id)
                 completeWaiters(id, DownloadResult.Cancelled)
                 markTerminal(id)
-                CommandResult.Accepted(id)
+                CommandResult.Accepted
             }
             is DownloadState.Starting, is DownloadState.Running, is DownloadState.Pausing -> {
                 snapshots[id] = snap.copy(state = DownloadState.Cancelling)
                 resumeAfterPause.remove(id)
                 active[id]?.cancel(CancellationException("cancel"))
-                CommandResult.Accepted(id)
+                CommandResult.Accepted
             }
-            is DownloadState.Cancelled, is DownloadState.Failed, is DownloadState.Succeeded -> CommandResult.Accepted(id)
-            is DownloadState.Cancelling -> CommandResult.Accepted(id)
+            is DownloadState.Cancelled, is DownloadState.Failed, is DownloadState.Succeeded -> CommandResult.Accepted
+            is DownloadState.Cancelling -> CommandResult.Accepted
         }
     }
 
     private fun removeDownload(id: DownloadId, deleteFile: Boolean): CommandResult {
-        val snapshot = snapshots[id] ?: return CommandResult.Rejected("Download not found")
+        val snapshot = snapshots[id] ?: return CommandResult.Rejected.NotFound
         if (!snapshot.state.isTerminal()) {
-            return CommandResult.Rejected("Only finished downloads can be removed")
+            return CommandResult.Rejected.InvalidState(snapshot.state)
         }
         if (deleteFile) {
-            val path = (snapshot.state as? DownloadState.Succeeded)?.result?.finalPath
+            val path = (snapshot.state as? DownloadState.Succeeded)?.file?.path
             if (path != null) {
                 try {
                     fileSystem.delete(path, mustExist = false)
                 } catch (t: Throwable) {
-                    return CommandResult.Rejected(t.message ?: "Unable to delete completed file")
+                    return CommandResult.Rejected.Failed(
+                        DownloadFailure.FileSystem(t.message ?: "Unable to delete completed file")
+                    )
                 }
             }
         }
         forgetDownload(id)
-        return CommandResult.Accepted(id)
+        return CommandResult.Accepted
     }
 
     private fun clearFinishedDownloads(): CommandResult {
         snapshots.values.filter { it.state.isTerminal() }.map { it.id }.forEach(::forgetDownload)
-        return CommandResult.Accepted()
+        return CommandResult.Accepted
     }
 
     /** Reorders [id] within its own priority tier; priority is preserved. */
     private fun moveWithinPriorityDownload(id: DownloadId, newPosition: Int): CommandResult {
-        val snap = snapshots[id] ?: return CommandResult.Rejected("Download not found")
+        val snap = snapshots[id] ?: return CommandResult.Rejected.NotFound
         val queue = pendingByPriority.getValue(snap.request.priority)
-        if (!queue.contains(id)) return CommandResult.Rejected("Download is not pending")
-        if (newPosition !in queue.indices) return CommandResult.Rejected("Invalid queue position")
+        if (!queue.contains(id)) return CommandResult.Rejected.InvalidState(snap.state)
+        if (newPosition !in queue.indices) return CommandResult.Rejected.InvalidPosition(newPosition)
         queue.remove(id)
         queue.add(newPosition, id)
-        return CommandResult.Accepted(id)
+        return CommandResult.Accepted
     }
 
     private fun handleWorkerEvent(event: InternalEvent) {
@@ -531,8 +510,8 @@ public class DefaultDownloadManager internal constructor(
                 resumeAfterPause.remove(event.id)
                 serverMetadata.remove(event.id)
                 val snap = snapshots[event.id] ?: return
-                snapshots[event.id] = snap.copy(state = DownloadState.Succeeded(event.success), queuePosition = null)
-                completeWaiters(event.id, DownloadResult.Success(event.success))
+                snapshots[event.id] = snap.copy(state = DownloadState.Succeeded(event.file), queuePosition = null)
+                completeWaiters(event.id, DownloadResult.Success(event.file))
                 markTerminal(event.id)
             }
             is InternalEvent.Failed -> {
@@ -671,15 +650,12 @@ public class DefaultDownloadManager internal constructor(
                 if (!inlineValidated) validateChecksum(partialPath, checksum)
             }
             val size = fileSystem.metadata(partialPath).size ?: 0L
-            request.expectedSizeBytes?.let {
-                if (it != size) throw DownloadIntegrityException(it, size)
+            request.expectedBytes?.let {
+                if (it != size) throw SizeMismatchException(it, size)
             }
             finalizePartialFile(partialPath, finalPath, request.effectiveOverwritePolicy(), id)
             sendEvent(
-                InternalEvent.Succeeded(
-                    id,
-                    DownloadSuccess(finalPath, size, request.expectedSizeBytes ?: size)
-                )
+                InternalEvent.Succeeded(id, DownloadedFile(finalPath, size))
             )
         } catch (t: Throwable) {
             when (t) {
@@ -803,7 +779,7 @@ public class DefaultDownloadManager internal constructor(
                 }
 
                 if (totalLength != null && downloaded != totalLength) {
-                    throw DownloadIntegrityException(totalLength, downloaded)
+                    throw SizeMismatchException(totalLength, downloaded)
                 }
 
                 sink.flush()
@@ -894,7 +870,7 @@ public class DefaultDownloadManager internal constructor(
                 segmentPaths.forEach { fileSystem.delete(it, mustExist = false) }
                 val actualSize = fileSystem.metadata(partialPath).size ?: 0L
                 if (actualSize != metadata.totalBytes) {
-                    throw DownloadIntegrityException(metadata.totalBytes, actualSize)
+                    throw SizeMismatchException(metadata.totalBytes, actualSize)
                 }
                 recordOriginSuccess(origin, segmentCount)
                 return true
@@ -1123,7 +1099,7 @@ public class DefaultDownloadManager internal constructor(
                 }
                 val contentLength = response.headers[HttpHeaders.ContentLength]?.toLongOrNull()
                 if (contentLength != null && contentLength != range.length) {
-                    throw DownloadIntegrityException(range.length, contentLength)
+                    throw SizeMismatchException(range.length, contentLength)
                 }
                 response.headers[HttpHeaders.ContentRange]?.let { contentRange ->
                     validateContentRange(contentRange, range, metadata.totalBytes)
@@ -1143,7 +1119,7 @@ public class DefaultDownloadManager internal constructor(
                     }
                     sink.flush()
                     if (downloaded != range.length) {
-                        throw DownloadIntegrityException(range.length, downloaded)
+                        throw SizeMismatchException(range.length, downloaded)
                     }
                 }
             }
@@ -1229,17 +1205,17 @@ public class DefaultDownloadManager internal constructor(
     private fun validateContentRange(contentRange: String, range: SegmentRange, totalBytes: Long) {
         val normalized = contentRange.trim()
         if (!normalized.startsWith("bytes ", ignoreCase = true)) {
-            throw DownloadIntegrityException(range.length, 0L)
+            throw SizeMismatchException(range.length, 0L)
         }
         val rangeAndTotal = normalized.substringAfter(' ').split('/')
-        if (rangeAndTotal.size != 2) throw DownloadIntegrityException(range.length, 0L)
+        if (rangeAndTotal.size != 2) throw SizeMismatchException(range.length, 0L)
         val startAndEnd = rangeAndTotal[0].split('-')
-        if (startAndEnd.size != 2) throw DownloadIntegrityException(range.length, 0L)
+        if (startAndEnd.size != 2) throw SizeMismatchException(range.length, 0L)
         val actualStart = startAndEnd[0].toLongOrNull()
         val actualEnd = startAndEnd[1].toLongOrNull()
         val actualTotal = rangeAndTotal[1].toLongOrNull()
         if (actualStart != range.start || actualEnd != range.endInclusive || actualTotal != totalBytes) {
-            throw DownloadIntegrityException(range.length, (actualEnd ?: -1L) - (actualStart ?: 0L) + 1L)
+            throw SizeMismatchException(range.length, (actualEnd ?: -1L) - (actualStart ?: 0L) + 1L)
         }
     }
 
@@ -1387,9 +1363,9 @@ public class DefaultDownloadManager internal constructor(
         is HttpRequestTimeoutException -> DownloadFailure.Timeout(throwable.message ?: "Request timeout")
         is DownloadStallException -> DownloadFailure.Timeout(throwable.message ?: "Download stalled")
         is ResponseHeadTimeoutException -> DownloadFailure.Timeout(throwable.message ?: "Response timed out")
-        is DownloadIntegrityException -> DownloadFailure.IntegrityMismatch(throwable.expected, throwable.actual)
-        is DownloadFileExistsException -> DownloadFailure.AlreadyExists(throwable.path, "Target file already exists: ${throwable.path}")
-        is DiskNoSpaceException -> DownloadFailure.NoSpace(path, throwable.message)
+        is SizeMismatchException -> DownloadFailure.SizeMismatch(throwable.expected, throwable.actual)
+        is DownloadFileExistsException -> DownloadFailure.AlreadyExists(throwable.path)
+        is DiskNoSpaceException -> DownloadFailure.NoSpace(path, throwable.message ?: "Not enough disk space")
         is ChecksumMismatchException -> DownloadFailure.ChecksumMismatch(throwable.expected, throwable.actual)
         is ServerFileChangedException -> DownloadFailure.ServerChanged(throwable.message ?: "Server file changed mid-download")
         is IllegalStateException -> DownloadFailure.FileSystem(throwable.message ?: "Invalid download state")
@@ -1473,7 +1449,7 @@ public class DefaultDownloadManager internal constructor(
 
     private fun terminalResultFromSnapshot(snapshot: DownloadSnapshot?): DownloadResult? {
         return when (val state = snapshot?.state) {
-            is DownloadState.Succeeded -> DownloadResult.Success(state.result)
+            is DownloadState.Succeeded -> DownloadResult.Success(state.file)
             is DownloadState.Failed -> DownloadResult.Failure(state.failure)
             is DownloadState.Cancelled -> DownloadResult.Cancelled
             else -> null
@@ -1542,27 +1518,11 @@ public class DefaultDownloadManager internal constructor(
         )
     }
 
-    private fun DownloadRequest.unsupportedByDefaultManagerReason(): String? {
-        if (Url(url).protocol.name !in filesystemBackedSchemes) {
-            return "DefaultDownloadManager supports http and https URLs only."
-        }
-        if (headers[HttpHeaders.Range] != null) {
-            return "Range is managed internally for resume support and cannot be supplied by callers."
-        }
-        return null
-    }
-
-    private fun resolveConcurrentDownloads(concurrency: DownloadConcurrency): Int =
-        when (concurrency) {
-            DownloadConcurrency.Default -> 3
-            is DownloadConcurrency.Fixed -> concurrency.downloads
-        }
-
     private fun resolveSegmentCount(segmentation: DownloadSegmentation, totalBytes: Long): Int =
         when (segmentation) {
             DownloadSegmentation.Auto -> autoSegmentCount(totalBytes)
             DownloadSegmentation.Single -> 1
-            is DownloadSegmentation.MaxSegments -> segmentation.segments
+            is DownloadSegmentation.MaxSegments -> segmentation.count
         }
 
     private fun autoSegmentCount(totalBytes: Long): Int {
@@ -1641,10 +1601,10 @@ private class DownloadHttpException(
     message: String?,
 ) : RuntimeException(message)
 
-private class DownloadIntegrityException(
+private class SizeMismatchException(
     val expected: Long,
     val actual: Long,
-) : RuntimeException("Integrity mismatch: expected=$expected actual=$actual")
+) : RuntimeException("Size mismatch: expected=$expected actual=$actual")
 
 private class DownloadFileExistsException(
     val path: Path,
@@ -1669,5 +1629,3 @@ private class DownloadStallException : RuntimeException("Download stalled: no by
 private class ResponseHeadTimeoutException(
     timeout: Duration,
 ) : RuntimeException("No response from server within the idle timeout ($timeout)")
-
-private val filesystemBackedSchemes = setOf("http", "https")

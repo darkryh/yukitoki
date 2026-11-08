@@ -89,7 +89,7 @@ class DownloadStateMachineTest {
 
     private suspend fun DefaultDownloadManager.submit(request: DownloadRequest): DownloadId {
         val id = DownloadId.new()
-        assertIs<CommandResult.Accepted>(submitInternal(DownloadCommand.Enqueue(request, id)))
+        assertIs<CommandResult.Accepted>(submitCommand(DownloadCommand.Enqueue(request, id)))
         return id
     }
 
@@ -123,7 +123,7 @@ class DownloadStateMachineTest {
         )
         val id = DownloadId.new()
         listOf(
-            async { manager.submitInternal(DownloadCommand.Enqueue(request("b.bin"), id)) },
+            async { manager.submitCommand(DownloadCommand.Enqueue(request("b.bin"), id)) },
             async { manager.pause(id) },
         ).awaitAll()
         runCurrent()
@@ -141,7 +141,7 @@ class DownloadStateMachineTest {
     fun `cancelAll terminates paused downloads`() = runTest(timeout = testTimeout) {
         val manager = manager(
             hangingClient(),
-            DownloadManagerConfig(concurrency = DownloadConcurrency.Fixed(1)),
+            DownloadManagerConfig(maxConcurrentDownloads = 1),
         )
         manager.submit(request("running.bin"))
         runCurrent()
@@ -219,7 +219,7 @@ class DownloadStateMachineTest {
     fun `shutdown right after enqueue does not hang when the worker has not run yet`() = runTest(timeout = testTimeout) {
         val manager = manager(hangingClient())
         listOf(
-            async { manager.submitInternal(DownloadCommand.Enqueue(request("f.bin"), DownloadId.new())) },
+            async { manager.submitCommand(DownloadCommand.Enqueue(request("f.bin"), DownloadId.new())) },
             async { manager.shutdown() },
         ).awaitAll()
     }
@@ -285,7 +285,7 @@ class DownloadStateMachineTest {
         val manager = managerWithFailingSink { manager ->
             scope.launch(start = CoroutineStart.UNDISPATCHED) { manager.cancel(id) }
         }
-        manager.submitInternal(DownloadCommand.Enqueue(request("h.bin"), id))
+        manager.submitCommand(DownloadCommand.Enqueue(request("h.bin"), id))
 
         assertIs<DownloadResult.Cancelled>(manager.await(id))
     }
@@ -297,7 +297,7 @@ class DownloadStateMachineTest {
         val manager = managerWithFailingSink { manager ->
             scope.launch(start = CoroutineStart.UNDISPATCHED) { manager.pause(id) }
         }
-        manager.submitInternal(DownloadCommand.Enqueue(request("i.bin"), id))
+        manager.submitCommand(DownloadCommand.Enqueue(request("i.bin"), id))
 
         val settled = manager.state.first { it.snapshots[id]?.state.let { state -> state is DownloadState.Paused || state is DownloadState.Failed } }
         assertIs<DownloadState.Paused>(settled.snapshots[id]?.state)

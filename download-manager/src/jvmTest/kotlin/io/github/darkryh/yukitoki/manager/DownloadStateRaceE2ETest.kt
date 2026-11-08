@@ -138,7 +138,7 @@ class DownloadStateRaceE2ETest {
 
     @Test
     fun `cancelAll ends running, paused and queued downloads alike`() = withManager { manager ->
-        manager.setConcurrency(DownloadConcurrency.Fixed(1))
+        manager.setMaxConcurrentDownloads(1)
         val running = manager.enqueue(slowRequest("e1.bin", DownloadSegmentation.Single))
         val paused = manager.enqueue(slowRequest("e2.bin", DownloadSegmentation.Single))
         val queued = manager.enqueue(slowRequest("e3.bin", DownloadSegmentation.Single))
