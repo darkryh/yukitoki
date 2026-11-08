@@ -137,6 +137,31 @@ class DownloadStateRaceE2ETest {
     }
 
     @Test
+    fun `cancelling a paused download removes the partial it kept`() = withManager { manager ->
+        val task = manager.enqueue(slowRequest("paused.bin", DownloadSegmentation.Single))
+        manager.awaitRunning(task.id)
+        task.pause()
+        manager.awaitPaused(task.id)
+        assertTrue(fs.list(tmpDir).isNotEmpty(), "a paused single stream keeps its partial")
+
+        task.cancel()
+
+        assertIs<DownloadResult.Cancelled>(task.await())
+        assertOnlyFinalFiles()
+    }
+
+    @Test
+    fun `shutdown removes the partial of a paused download`() {
+        withManager { manager ->
+            val task = manager.enqueue(slowRequest("shutdown.bin", DownloadSegmentation.Single))
+            manager.awaitRunning(task.id)
+            task.pause()
+            manager.awaitPaused(task.id)
+        }
+        assertOnlyFinalFiles()
+    }
+
+    @Test
     fun `cancelAll ends running, paused and queued downloads alike`() = withManager { manager ->
         manager.setMaxConcurrentDownloads(1)
         val running = manager.enqueue(slowRequest("e1.bin", DownloadSegmentation.Single))

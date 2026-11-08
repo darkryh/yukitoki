@@ -48,9 +48,8 @@ internal class DefaultDownloadManager(
 
     private data class OriginProfile(
         var activeRequests: Int = 0,
-        var maxParallelRequests: Int = 4,
+        var maxParallelRequests: Int = MAX_PARALLEL_REQUESTS_PER_ORIGIN,
         var penaltyUntil: ComparableTimeMark? = null,
-        var lastGoodSegmentCount: Int? = null,
     )
 
     private inner class OriginPermit(private val origin: String) {
@@ -114,6 +113,10 @@ internal class DefaultDownloadManager(
     private var draining = false
     private var shutdownReply: CompletableDeferred<Unit>? = null
 
+    // Coordinator-confined: completions held back until the batch's state is published.
+    private val repliesAfterPublish = ArrayList<() -> Unit>()
+    private var finishedSincePublish = 0
+
     private val _state = MutableStateFlow(
         DownloadManagerState(
             snapshots = emptyMap(),
@@ -124,7 +127,9 @@ internal class DefaultDownloadManager(
     )
 
     init {
-        internalScope.launch { coordinatorLoop() }
+        // Reserving destinations and removing files touch the disk, so the coordinator must stay
+        // off a borrowed UI scope's dispatcher. One thread at a time keeps its state confined.
+        internalScope.launch(ioDispatcher.limitedParallelism(1)) { coordinatorLoop() }
     }
 
     internal suspend fun submitCommand(command: DownloadCommand): CommandResult {
@@ -245,16 +250,25 @@ internal class DefaultDownloadManager(
     }
 
     private suspend fun coordinatorLoop() {
-        for (message in inbox) {
-            when (message) {
-                is InternalMessage.UserCommand -> handleUserCommand(message)
-                is InternalMessage.WorkerEvent -> handleWorkerEvent(message.event)
-                is InternalMessage.AwaitTerminal -> handleAwaitTerminal(message)
-                is InternalMessage.RetryReady -> handleRetryReady(message.id)
-                is InternalMessage.Shutdown -> beginShutdown(message)
+        for (first in inbox) {
+            // Publishing costs O(tracked downloads), so one state covers everything already
+            // queued. The cap keeps state fresh and acks prompt under a sustained event flood.
+            var message: InternalMessage? = first
+            var handled = 0
+            while (message != null) {
+                // A finished download must reach state before anything can forget it.
+                if (finishedSincePublish > 0 && message.forgetsFinished()) publishAndReply()
+                handleMessage(message)
+                if (!draining) dispatchIfPossible()
+                if (draining && active.isEmpty()) break
+                val retentionFull = config.maxRetainedFinished in 1..finishedSincePublish
+                message = if (!retentionFull && ++handled < MAX_MESSAGES_PER_PUBLISH) {
+                    inbox.tryReceive().getOrNull()
+                } else {
+                    null
+                }
             }
-            if (!draining) dispatchIfPossible()
-            publishState()
+            publishAndReply()
             if (draining && active.isEmpty()) {
                 finishShutdown()
                 return
@@ -262,17 +276,47 @@ internal class DefaultDownloadManager(
         }
     }
 
+    private fun publishAndReply() {
+        publishState()
+        finishedSincePublish = 0
+        // Only now: whoever receives a reply must already see its effect in state.value.
+        completeRepliesAfterPublish()
+    }
+
+    private fun InternalMessage.forgetsFinished(): Boolean =
+        this is InternalMessage.UserCommand &&
+            (command is DownloadCommand.Remove || command is DownloadCommand.ClearFinished)
+
+    private fun handleMessage(message: InternalMessage) {
+        when (message) {
+            is InternalMessage.UserCommand -> handleUserCommand(message)
+            is InternalMessage.WorkerEvent -> handleWorkerEvent(message.event)
+            is InternalMessage.AwaitTerminal -> handleAwaitTerminal(message)
+            is InternalMessage.RetryReady -> handleRetryReady(message.id)
+            is InternalMessage.Shutdown -> beginShutdown(message)
+        }
+    }
+
+    private fun <T> replyAfterPublish(reply: CompletableDeferred<T>, value: T) {
+        repliesAfterPublish.add { reply.complete(value) }
+    }
+
+    private fun completeRepliesAfterPublish() {
+        repliesAfterPublish.forEach { it() }
+        repliesAfterPublish.clear()
+    }
+
     private fun handleAwaitTerminal(message: InternalMessage.AwaitTerminal) {
         val snap = snapshots[message.id]
         if (snap == null) {
             // Unknown id: never enqueued (or already pruned). Don't register a waiter
             // that could hang forever — report "no such download".
-            message.reply.complete(null)
+            replyAfterPublish(message.reply, null)
             return
         }
         val terminal = terminalResultFromSnapshot(snap)
         if (terminal != null) {
-            message.reply.complete(terminal)
+            replyAfterPublish(message.reply, terminal)
             return
         }
         terminalWaiters.getOrPut(message.id) { mutableListOf() }.add(message.reply)
@@ -287,6 +331,7 @@ internal class DefaultDownloadManager(
             .map { it.id }
             .forEach { id ->
                 val snapshot = snapshots[id] ?: return@forEach
+                deletePartialAfterCancel(id, snapshot)
                 snapshots[id] = snapshot.copy(state = DownloadState.Cancelled, queuePosition = null)
                 completeWaiters(id, DownloadResult.Cancelled)
                 markTerminal(id)
@@ -307,7 +352,7 @@ internal class DefaultDownloadManager(
 
     private fun handleUserCommand(message: InternalMessage.UserCommand) {
         if (draining) {
-            message.reply.complete(CommandResult.Rejected.ManagerClosed)
+            replyAfterPublish(message.reply, CommandResult.Rejected.ManagerClosed)
             return
         }
         val ack = when (val cmd = message.command) {
@@ -342,7 +387,7 @@ internal class DefaultDownloadManager(
             is DownloadCommand.Remove -> removeDownload(cmd.id, cmd.deleteFile)
             DownloadCommand.ClearFinished -> clearFinishedDownloads()
         }
-        message.reply.complete(ack)
+        replyAfterPublish(message.reply, ack)
     }
 
     private fun enqueueDownload(cmd: DownloadCommand.Enqueue): CommandResult {
@@ -439,6 +484,8 @@ internal class DefaultDownloadManager(
         return when (snap.state) {
             is DownloadState.Queued, is DownloadState.Paused -> {
                 removeFromPending(id)
+                // No worker is left to clean up what a pause or failed attempt kept on disk.
+                deletePartialAfterCancel(id, snap)
                 snapshots[id] = snap.copy(state = DownloadState.Cancelled)
                 serverMetadata.remove(id)
                 completeWaiters(id, DownloadResult.Cancelled)
@@ -654,6 +701,7 @@ internal class DefaultDownloadManager(
                 if (it != size) throw SizeMismatchException(it, size)
             }
             finalizePartialFile(partialPath, finalPath, request.effectiveOverwritePolicy(), id)
+            recordOriginSuccess(originKey(request.url))
             sendEvent(
                 InternalEvent.Succeeded(id, DownloadedFile(finalPath, size))
             )
@@ -696,6 +744,7 @@ internal class DefaultDownloadManager(
             return false
         }
 
+        awaitOriginPenalty(originKey(request.url))
         val statement = httpClient.prepareRequest(request.url) {
             this.method = HttpMethod.Get
             disableTotalRequestTimeout()
@@ -804,6 +853,9 @@ internal class DefaultDownloadManager(
         request: DownloadRequest,
         partialPath: Path,
     ): Boolean {
+        val knownSmall = request.segmentation is DownloadSegmentation.Auto &&
+            request.expectedBytes?.let { autoSegmentCount(it) <= 1 } == true
+        if (knownSmall) return false
         val metadata = fetchSegmentedMetadata(id, request, config.idleTimeout) ?: return false
         val origin = originKey(request.url)
         var desiredSegments = min(resolveSegmentCount(request.segmentation, metadata.totalBytes).toLong(), metadata.totalBytes)
@@ -872,7 +924,6 @@ internal class DefaultDownloadManager(
                 if (actualSize != metadata.totalBytes) {
                     throw SizeMismatchException(metadata.totalBytes, actualSize)
                 }
-                recordOriginSuccess(origin, segmentCount)
                 return true
             } catch (t: Throwable) {
                 // Segments are not resumable (the next attempt starts over), so a pause cleans
@@ -933,30 +984,37 @@ internal class DefaultDownloadManager(
         originMutex.withLock {
             val now = timeSource.markNow()
             val profile = originProfiles.getOrPut(origin) { OriginProfile() }
-            val rememberedCap = profile.lastGoodSegmentCount ?: desiredSegments
             val underPenalty = profile.penaltyUntil?.let { it > now } ?: false
             val pressureCap = if (underPenalty) 1 else profile.maxParallelRequests
-            min(desiredSegments, min(rememberedCap, pressureCap)).coerceAtLeast(1)
+            min(desiredSegments, pressureCap).coerceAtLeast(1)
         }
 
     private suspend fun recordOriginRateLimit(origin: String, segmentCount: Int, retryDelay: Duration) {
         originMutex.withLock {
             val profile = originProfiles.getOrPut(origin) { OriginProfile() }
             profile.maxParallelRequests = (min(profile.maxParallelRequests, segmentCount) / 2).coerceAtLeast(1)
-            profile.lastGoodSegmentCount = min(profile.lastGoodSegmentCount ?: profile.maxParallelRequests, profile.maxParallelRequests)
             val candidate = timeSource.markNow() + retryDelay
             val current = profile.penaltyUntil
             profile.penaltyUntil = if (current == null || candidate > current) candidate else current
         }
     }
 
-    private suspend fun recordOriginSuccess(origin: String, segmentCount: Int) {
+    /** Each finished download earns back one parallel request lost to rate limiting. */
+    private suspend fun recordOriginSuccess(origin: String) {
         originMutex.withLock {
-            val profile = originProfiles.getOrPut(origin) { OriginProfile() }
-            profile.lastGoodSegmentCount = segmentCount
-            if (profile.maxParallelRequests < segmentCount) {
-                profile.maxParallelRequests = segmentCount
-            }
+            val profile = originProfiles[origin] ?: return@withLock
+            profile.maxParallelRequests = min(profile.maxParallelRequests + 1, MAX_PARALLEL_REQUESTS_PER_ORIGIN)
+        }
+    }
+
+    /** Waits out a rate-limit penalty. Whole-file requests don't take a parallelism permit. */
+    private suspend fun awaitOriginPenalty(origin: String) {
+        while (true) {
+            val remaining = originMutex.withLock {
+                val now = timeSource.markNow()
+                originProfiles[origin]?.penaltyUntil?.takeIf { it > now }?.let { it - now }
+            } ?: return
+            delay(remaining.coerceAtLeast(1.milliseconds))
         }
     }
 
@@ -988,6 +1046,17 @@ internal class DefaultDownloadManager(
         return try {
             statement.executeWithResponseTimeout(responseTimeout) { response ->
                 when {
+                    response.prefersSingleStream(request) -> null
+                    response.status == HttpStatusCode.NotFound || response.status == HttpStatusCode.Gone -> {
+                        if (request.segmentation is DownloadSegmentation.MaxSegments) {
+                            throw DownloadHttpException(
+                                code = response.status.value,
+                                message = response.status.description,
+                                retryAfter = response.headers.retryAfter(),
+                            )
+                        }
+                        null
+                    }
                     response.status == HttpStatusCode.MethodNotAllowed || response.status == HttpStatusCode.NotImplemented -> {
                         fetchRangeProbeMetadata(id, request, responseTimeout)
                     }
@@ -1041,7 +1110,9 @@ internal class DefaultDownloadManager(
         }
         return try {
             statement.executeWithResponseTimeout(responseTimeout) { response ->
-                if (response.status != HttpStatusCode.PartialContent) return@executeWithResponseTimeout null
+                if (response.status != HttpStatusCode.PartialContent || response.prefersSingleStream(request)) {
+                    return@executeWithResponseTimeout null
+                }
                 val totalBytes = response.headers[HttpHeaders.ContentRange]
                     ?.let { parseTotalBytesFromContentRange(it) }
                     ?: response.headers[HttpHeaders.ContentLength]?.toLongOrNull()?.takeIf { it > 1L }
@@ -1057,6 +1128,15 @@ internal class DefaultDownloadManager(
             null
         }
     }
+
+    /**
+     * HTTP/2 and later carry every range over one connection, under one flow-control window, so
+     * segments add temp files and a merge without adding bandwidth. An explicit
+     * [DownloadSegmentation.MaxSegments] is still honored.
+     */
+    private fun HttpResponse.prefersSingleStream(request: DownloadRequest): Boolean =
+        request.segmentation is DownloadSegmentation.Auto && version != HttpProtocolVersion.HTTP_1_1 &&
+            version != HttpProtocolVersion.HTTP_1_0
 
     private fun publishSegmentedMetadata(id: DownloadId, eTag: String?, lastModified: String?) {
         if (eTag != null || lastModified != null) {
@@ -1457,6 +1537,7 @@ internal class DefaultDownloadManager(
     }
 
     private fun markTerminal(id: DownloadId) {
+        finishedSincePublish++
         releaseDestination(id)
         terminalOrder.remove(id)
         terminalOrder.addLast(id)
@@ -1477,9 +1558,7 @@ internal class DefaultDownloadManager(
         serverMetadata.remove(id)
         releaseDestination(id)
         snapshots.remove(id)
-        terminalWaiters.remove(id)?.forEach { waiter ->
-            if (!waiter.isCompleted) waiter.complete(null)
-        }
+        terminalWaiters.remove(id)?.forEach { waiter -> replyAfterPublish(waiter, null) }
     }
 
     private fun DownloadState.isTerminal(): Boolean =
@@ -1492,9 +1571,7 @@ internal class DefaultDownloadManager(
     }
 
     private fun completeWaiters(id: DownloadId, result: DownloadResult) {
-        terminalWaiters.remove(id)?.forEach { waiter ->
-            if (!waiter.isCompleted) waiter.complete(result)
-        }
+        terminalWaiters.remove(id)?.forEach { waiter -> replyAfterPublish(waiter, result) }
     }
 
     private fun publishState() {
@@ -1530,8 +1607,7 @@ internal class DefaultDownloadManager(
         return when {
             totalBytes < 16L * mib -> 1
             totalBytes < 128L * mib -> 2
-            totalBytes < 512L * mib -> 4
-            else -> 6
+            else -> MAX_PARALLEL_REQUESTS_PER_ORIGIN
         }
     }
 
@@ -1591,7 +1667,11 @@ private class SingleStreamProgress(
     }
 }
 
+private const val MAX_PARALLEL_REQUESTS_PER_ORIGIN: Int = 4
+
 private const val DISK_SPACE_SAFETY_MARGIN_BYTES: Long = 10L * 1024L * 1024L
+
+private const val MAX_MESSAGES_PER_PUBLISH: Int = 256
 
 private data object PauseCancellationException : CancellationException("Paused by user")
 
