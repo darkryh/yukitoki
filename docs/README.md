@@ -15,7 +15,7 @@ observable download.
 
 Task-focused recipes. Each assumes you already know the basics and solves one real problem.
 
-- [Download inside a ViewModel + Compose](how-to/download-in-a-viewmodel.md)
+- [Download inside a ViewModel](how-to/download-in-a-viewmodel.md)
 - [Control the queue: pause, resume, cancel, retry, reorder](how-to/control-the-queue.md)
 - [Verify file integrity with checksums](how-to/verify-file-integrity.md)
 - [Tune concurrency and segmentation](how-to/tune-concurrency-and-segmentation.md)

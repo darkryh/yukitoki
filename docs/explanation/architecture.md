@@ -45,14 +45,12 @@ exactly why it must never do anything slow.
 
 This is the key to goal #2. There are two kinds of work, and they run in different places:
 
-- **The coordinator** runs on the dispatcher of the `CoroutineScope` you pass to
-  `DefaultDownloadManager`. It only ever touches in-memory state — it never reads or writes a file.
-  Because it does no blocking work, running it on a UI-confined scope (`viewModelScope`, i.e. Main) is
-  harmless.
-- **Each download worker** is launched on an **I/O dispatcher** (`ioDispatcher`). This is where the
-  blocking okio reads and writes, atomic moves, and metadata calls happen. The default is
-  `Dispatchers.IO` on JVM/Android and `Dispatchers.Default` on iOS (Kotlin/Native exposes no public
-  `Dispatchers.IO`, and `Default` is an off-main thread pool, which is what matters).
+- **The coordinator** runs on one thread at a time of the I/O dispatcher, whichever scope you pass to
+  `DownloadManager.create`. Enqueueing resolves file names and reserves paths, so it can touch the
+  disk, which is why it never runs on your scope's dispatcher.
+- **Each download worker** is launched on the same **I/O dispatcher**, `Dispatchers.IO` on Android,
+  JVM, and iOS. This is where the blocking okio reads and writes, atomic moves, and metadata calls
+  happen.
 
 So when you call `manager.pause(id)` from the main thread, you're sending a message to the coordinator
 (cheap, non-blocking); the actual file work was never on your thread to begin with. That separation is
@@ -76,9 +74,10 @@ untouched, and the `.part` file is deleted or kept according to `deletePartialOn
 A paused or interrupted single-stream download leaves its `.part` file in place. On resume, the
 manager issues an HTTP `Range` request starting at the bytes already on disk, guarded by an
 `If-Range` validator (the server's `ETag` or `Last-Modified`). The validator is what makes resume
-**safe**: if the resource changed since the partial was written, the condition fails and the manager
-reports `DownloadFailure.ServerChanged` rather than stitching together two different versions of a
-file.
+**safe**: if the resource changed since the partial was written, a correct server answers `200` with
+the new file, and the manager discards the partial and starts over. A server that answers `206` with
+a different validator fails with `DownloadFailure.ServerChanged`. Either way, two versions of a file
+are never stitched together.
 
 This follows the standard HTTP model (`Range` / `Accept-Ranges` / `Content-Range` / `If-Range`), so it
 interoperates with any correct HTTP server without special server support.
@@ -99,7 +98,8 @@ inconsistently. Yukitoki treats parallelism as something the server must **earn*
 3. Only if range support is proven does it request isolated slices, each with
    `Accept-Encoding: identity` (so a compressing proxy can't scramble byte offsets).
 4. Each slice response is validated (`206 Partial Content`, `Content-Range`, expected byte counts)
-   before its bytes are merged into the single `.part` file.
+   as its bytes are written at their offset in one internal temp file, which becomes the `.part` file
+   once every slice is complete.
 
 If any of that fails to prove out, the download quietly uses the validated single-stream path instead.
 This is why `DownloadSegmentation.MaxSegments(n)` is documented as a **maximum**, not a demand: the manager
@@ -145,17 +145,18 @@ doesn't apply there. Rather than pretend, Yukitoki offers a distinct, honest API
 `DownloadIntents.dispatch` hands the download to the browser and returns once the browser accepts it.
 It explicitly does not promise byte progress, a final path, or checksums — because on that platform
 the browser, not Yukitoki, owns the transfer. Requests with custom headers go through a buffered
-`fetch()` instead, which suits bounded-size payloads; for large authenticated files, prefer a
-server-issued signed URL.
+`fetch()` instead, which suits bounded-size payloads and needs CORS across origins; for large
+authenticated files, prefer a server-issued signed URL.
 
 ## The ownership model
 
-Yukitoki deliberately does **not** own two things: your `HttpClient` and your `CoroutineScope`. You
-create, configure, and dispose of both. This keeps the library out of the business of guessing your
-engine, your timeouts, your proxy, and your lifecycle — and it means the manager composes cleanly with
-whatever DI and lifecycle framework you already use. The manager runs under a child `SupervisorJob` of
-your scope, so cancelling your scope reliably tears the manager down, and one failed download never
-cancels the others.
+`DownloadManager.create()` builds its own `HttpClient` and `CoroutineScope`, and closes them with the
+manager. `DownloadManager.create(httpClient, scope)` does **not** own what you pass: you create,
+configure, and dispose of both. That second form keeps the library out of the business of guessing
+your engine, your timeouts, your proxy, and your lifecycle, and it means the manager composes cleanly
+with whatever DI and lifecycle framework you already use. The manager runs under a child
+`SupervisorJob` of your scope, so cancelling your scope reliably tears the manager down, and one
+failed download never cancels the others.
 
 Network and charging constraints (Wi-Fi-only, charging-only) are intentionally *not* part of the
 request model either. They belong to a platform scheduler that decides *whether* to enqueue; Yukitoki's
@@ -172,4 +173,4 @@ feedback before the stable release. Pin the version you build against and consul
 
 - [API reference](../reference/api.md) — the exact public surface.
 - [Tune concurrency and segmentation](../how-to/tune-concurrency-and-segmentation.md) — the practical dials.
-- [Handle failures and retries](../how-to/handle-failures-and-retries.md) — the failure taxonomy in use.
+- [Handle failures and retries](../how-to/handle-failures-and-retries.md) — failures and retries in use.

@@ -24,26 +24,28 @@ val manager = DownloadManager.create {
 }
 ```
 
-Enqueue and observe a task:
+Enqueue a task, observe it, and await the result. `task.state` never completes, so code after a bare `collect` never runs. Collect it in its own coroutine:
 
 ```kotlin
 val task = manager.enqueue("https://example.com/archive.zip")
 
-task.state.collect { snapshot ->
-    when (val state = snapshot?.state) {
-        is DownloadState.Running -> println(state.progress.fraction)
-        else -> println(state)
+coroutineScope {
+    val progress = launch {
+        task.state.collect { snapshot ->
+            when (val state = snapshot?.state) {
+                is DownloadState.Running -> println(state.progress.fraction)
+                else -> println(state)
+            }
+        }
     }
-}
-```
 
-Await completion:
+    when (val result = task.await()) {
+        is DownloadResult.Success -> println(result.file.path)
+        is DownloadResult.Failure -> println(result.failure)
+        DownloadResult.Cancelled -> println("cancelled")
+    }
 
-```kotlin
-when (val result = task.await()) {
-    is DownloadResult.Success -> println(result.file.path)
-    is DownloadResult.Failure -> println(result.failure)
-    DownloadResult.Cancelled -> println("cancelled")
+    progress.cancel()
 }
 ```
 
@@ -69,6 +71,14 @@ Use an exact path with `DownloadDestination.File(path)`. `OverwritePolicy.DEFAUL
 
 ## Custom Ktor client
 
+Yukitoki's bundled engines are not on your compile classpath, so add the engine you name, on the Ktor version Yukitoki uses (`3.6.1` for `1.0.0-beta06`). OkHttp is Android and JVM only, so this code belongs in that platform's source set:
+
+```kotlin
+androidMain.dependencies {
+    implementation("io.ktor:ktor-client-okhttp:3.6.1")
+}
+```
+
 ```kotlin
 val client = HttpClient(OkHttp) {
     // engine-specific plugins and configuration
@@ -88,5 +98,7 @@ manager.close()                         // immediate, non-suspending
 manager.shutdown(cancelActive = true)  // suspending cancellation
 manager.shutdown(cancelActive = false) // drain active transfers
 ```
+
+Use one of these. Read results before you shut down. Once a manager is closed, `task.await()` returns `Failure(ManagerClosed)` and `manager.await(id)` returns null, even for a file that was saved. A call already waiting gets the real result from `shutdown`, and `Failure(ManagerClosed)` from `close()`. `state` stops updating after `close()`, so a download that was running keeps showing `Running`. `close()` also leaves the `.part` file of a paused download on disk, while `shutdown` removes it.
 
 Yukitoki is an in-process manager. Its queue is not restored after process death or reboot.

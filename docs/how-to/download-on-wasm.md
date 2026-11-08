@@ -18,6 +18,8 @@ when (result) {
 
 `Dispatched` means the browser accepted the click-equivalent action. It does not mean the transfer completed and does not expose progress or the final path. `DownloadManager.create()` intentionally rejects browser use.
 
+Browsers honor the `download` attribute only for same-origin URLs. For a cross-origin URL without headers, the browser ignores `fileName` and decides for itself. A file it can't display is saved under the name from the URL. A page it can display **navigates the current tab away**, and `dispatch` still returns `Dispatched`. If the file comes from another origin, have that server send `Content-Disposition: attachment`, or use the `fetch()` path below.
+
 ## Authenticated downloads (with headers)
 
 A plain `<a download>` anchor cannot carry request headers, so it cannot authenticate a request.
@@ -48,3 +50,7 @@ This buffers the **entire response in browser memory** before the save starts â€
 streaming and no progress reporting. It is suitable for bounded-size authenticated payloads (a
 document export, a report, a small archive), not large files. A non-2xx response or a network/fetch
 failure both surface as `DownloadIntentResult.Rejected` with a description of what went wrong.
+
+A cross-origin server must allow the request through CORS, including every header you send. Without
+that, the browser blocks the request and you get `Rejected` with a generic "Failed to fetch" reason.
+`fileName` is honored on this path, even across origins.

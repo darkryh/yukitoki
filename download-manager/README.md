@@ -10,7 +10,7 @@ manager.close()
 ```
 
 
-`DefaultDownloadManager` borrows injected resources. `DownloadManager.create()` owns its automatically-created resources.
+`DownloadManager.create(httpClient, scope)` borrows injected resources. `DownloadManager.create()` owns its automatically-created resources.
 
 Destinations are explicit:
 

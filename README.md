@@ -4,17 +4,15 @@ Yukitoki is an in-process Kotlin Multiplatform download manager for Android, JVM
 
 The browser target exposes download intents because browsers do not expose an ordinary writable Downloads filesystem.
 
-Current development version: `1.0.0-SNAPSHOT`.
-
 ## Install
 
-The last published preview is:
+The latest release is:
 
 ```kotlin
 implementation("io.github.darkryh.yukitoki:download-manager:1.0.0-beta06")
 ```
 
-The pre-1.0 API documented below is currently available from this repository. The artifact bundles an appropriate Ktor engine for Android, JVM, and iOS.
+The artifact bundles an appropriate Ktor engine for Android, JVM, and iOS.
 
 ## Basic use
 
@@ -22,12 +20,18 @@ The pre-1.0 API documented below is currently available from this repository. Th
 val manager = DownloadManager.create()
 
 val task = manager.enqueue("https://example.com/report.pdf")
-task.state.collect { snapshot -> println(snapshot?.state) }
 
-when (val result = task.await()) {
-    is DownloadResult.Success -> println("Saved to ${result.file.path}")
-    is DownloadResult.Failure -> println("Failed: ${result.failure}")
-    DownloadResult.Cancelled -> println("Cancelled")
+coroutineScope {
+    // task.state never completes, so collect it beside the await and cancel it afterwards.
+    val progress = launch { task.state.collect { snapshot -> println(snapshot?.state) } }
+
+    when (val result = task.await()) {
+        is DownloadResult.Success -> println("Saved to ${result.file.path}")
+        is DownloadResult.Failure -> println("Failed: ${result.failure}")
+        DownloadResult.Cancelled -> println("Cancelled")
+    }
+
+    progress.cancel()
 }
 
 manager.close()
@@ -63,7 +67,7 @@ val manager = DownloadManager.create(
 )
 ```
 
-Injected resources remain caller-owned. A manager created with the no-argument factory owns and closes its client and scope.
+Injected resources remain caller-owned. A manager created without injected resources owns and closes its client and scope.
 
 Downloads never inherit a total request timeout: every download request opts out of one, including the CIO engine's built-in 15-second default, so a transfer can run as long as bytes keep arriving. Your client's connect and socket timeouts still apply, and `DownloadManagerConfig.idleTimeout` fails a download whose server stops responding.
 

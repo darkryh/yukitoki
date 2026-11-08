@@ -49,7 +49,7 @@ Invalid request construction throws `IllegalArgumentException`. A rejected publi
 
 - `pause`, `resume`, `cancel`, `retry`
 - `pauseAll`, `resumeAll`, `cancelAll`, `retryAllFailed`
-- `moveWithinPriority(id, position)` — reorders only inside the task's priority tier.
+- `moveWithinPriority(id, newPosition)` — reorders only inside the task's priority tier.
 - `setMaxConcurrentDownloads(n)` — throws `IllegalArgumentException` below 1.
 - `remove(id, deleteFile)`
 - `clearFinished()`
@@ -64,6 +64,13 @@ Commands return `CommandResult.Accepted` or a `CommandResult.Rejected`:
 
 `pauseAll`, `resumeAll` and `cancelAll` apply to every unfinished download, including those waiting for a retry.
 
+## Lifecycle
+
+- `close()` — immediate and non-suspending. Active downloads stop and their partial files are removed. A paused download's `.part` file stays on disk.
+- `shutdown(cancelActive)` — suspending. `true` (the default) cancels active downloads, and `false` lets them finish first. Either way, it removes the `.part` files of paused downloads.
+
+Afterwards, commands return `ManagerClosed`, `enqueue` throws `DownloadRejectedException`, and `download` returns `Failure(ManagerClosed)`. `task.await()` returns `Failure(ManagerClosed)` and `await(id)` returns null, even for a saved file. A call already waiting gets the real result from `shutdown` and `Failure(ManagerClosed)` from `close()`. `state` stops updating after `close()`.
+
 ## Configuration
 
 `DownloadManagerConfig`:
@@ -77,10 +84,11 @@ Commands return `CommandResult.Accepted` or a `CommandResult.Rejected`:
 
 `RetryPolicy` uses `Duration` and supplies `Default` and `None`. `ProgressGranularity` sets two minimums for each update, `minBytesDelta` (default 0) and `minInterval` (default 150 ms). The first and final bytes are always reported. ETA is exposed as `Duration?`.
 
-`DownloadSegmentation` is `Auto`, `Single`, or `MaxSegments(count)`. `MaxSegments` is a ceiling; Yukitoki can reduce it or fall back when a server cannot safely serve ranges, and each origin allows four parallel requests. `Auto` uses one stream below 16 MiB and over HTTP/2, where segments would share one connection.
+`DownloadSegmentation` is `Auto`, `Single`, or `MaxSegments(count)`. `MaxSegments` is a ceiling; Yukitoki can reduce it or fall back when a server cannot safely serve ranges, and each origin allows four parallel requests. `Auto` uses one stream below 16 MiB and over HTTP/2, where segments would share one connection, two segments below 128 MiB, and four above.
 
 ## Browser intents
 
-`DownloadIntents.dispatch(DownloadIntentRequest(url, fileName, headers))` returns `DownloadIntentResult.Dispatched` or `Rejected`. `Dispatched` only means that the browser accepted the action; it does not claim completion, progress, or a final filesystem path.
+`DownloadIntents.dispatch(DownloadIntentRequest(url, fileName, headers))` returns `DownloadIntentResult.Dispatched` or `Rejected`. `Dispatched` only means that the browser accepted the action; it does not claim completion, progress, or a final filesystem path. Without headers, a cross-origin URL ignores `fileName` and can navigate the tab away. See [Browser downloads](../how-to/download-on-wasm.md).
 
-`DownloadIntentRequest.headers` (`io.ktor.http.Headers`, default `Headers.Empty`) is only honored on wasm. Empty headers take the original plain `<a download>` anchor-navigation path. Non-empty headers switch to a `fetch()`-backed path that carries those headers, buffers the whole response as a `Blob`, and saves it via a short-lived `blob:` object URL — no streaming, no progress; suitable only for bounded-size authenticated payloads. See [Browser downloads](../how-to/download-on-wasm.md#authenticated-downloads-with-headers). On every non-wasm platform, `dispatch` always returns `Rejected`, so `headers` has no effect there.
+
+`DownloadIntentRequest.headers` (`io.ktor.http.Headers`, default `Headers.Empty`) is only honored on wasm. Empty headers take the original plain `<a download>` anchor-navigation path. Non-empty headers switch to a `fetch()`-backed path that carries those headers, buffers the whole response as a `Blob`, and saves it via a short-lived `blob:` object URL — no streaming, no progress; suitable only for bounded-size authenticated payloads, and a cross-origin server must allow it through CORS. See [Browser downloads](../how-to/download-on-wasm.md#authenticated-downloads-with-headers). On every non-wasm platform, `dispatch` always returns `Rejected`, so `headers` has no effect there.

@@ -69,14 +69,14 @@ manager.enqueue(
 
 ## React to a mismatch
 
-Observe the download and branch on the failure type. A checksum failure is not retryable by the
+Await the result and branch on the failure type. A checksum failure is not retried by the
 manager — the same URL will produce the same bad bytes — so surface it to the user or fetch from a
 different source.
 
 ```kotlin
-manager.observe(id).collect { snapshot ->
-    val failure = (snapshot?.state as? DownloadState.Failed)?.failure ?: return@collect
-    when (failure) {
+val result = task.await()
+if (result is DownloadResult.Failure) {
+    when (val failure = result.failure) {
         is DownloadFailure.ChecksumMismatch ->
             showError("File is corrupt. Expected ${failure.expectedHex}, got ${failure.actualHex}.")
         is DownloadFailure.SizeMismatch ->
@@ -88,5 +88,6 @@ manager.observe(id).collect { snapshot ->
 
 ## Related
 
-- [Handle failures and retries](handle-failures-and-retries.md) — the full failure taxonomy.
+- [Handle failures and retries](handle-failures-and-retries.md) — handling results and retry policy.
+- [API reference: tasks and results](../reference/api.md#tasks-and-results) — the full failure list.
 - [API reference: DownloadRequest](../reference/api.md#downloadrequest)
