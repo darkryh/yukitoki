@@ -71,13 +71,15 @@ untouched, and the `.part` file is deleted or kept according to `deletePartialOn
 
 ## Resume
 
-A paused or interrupted single-stream download leaves its `.part` file in place. On resume, the
-manager issues an HTTP `Range` request starting at the bytes already on disk, guarded by an
+A paused single-stream download, or one waiting to retry, leaves its `.part` file in place. On resume,
+the manager issues an HTTP `Range` request starting at the bytes already on disk, guarded by an
 `If-Range` validator (the server's `ETag` or `Last-Modified`). The validator is what makes resume
 **safe**: if the resource changed since the partial was written, a correct server answers `200` with
 the new file, and the manager discards the partial and starts over. A server that answers `206` with
-a different validator fails with `DownloadFailure.ServerChanged`. Either way, two versions of a file
-are never stitched together.
+a different validator fails with `DownloadFailure.ServerChanged`. If the server never gave a validator,
+nothing can prove the file is unchanged, so the manager starts over instead of resuming. A `416` means
+the server has no bytes at that offset, so it starts over then too. Two versions of a file are never
+stitched together.
 
 This follows the standard HTTP model (`Range` / `Accept-Ranges` / `Content-Range` / `If-Range`), so it
 interoperates with any correct HTTP server without special server support.
@@ -102,6 +104,8 @@ inconsistently. Yukitoki treats parallelism as something the server must **earn*
    once every slice is complete.
 
 If any of that fails to prove out, the download quietly uses the validated single-stream path instead.
+That includes a server that advertises ranges and then answers a slice with the whole file. A slice with
+a different validator than the probe saw fails with `DownloadFailure.ServerChanged`.
 This is why `DownloadSegmentation.MaxSegments(n)` is documented as a **maximum**, not a demand: the manager
 will use up to `n` segments, but fewer — or one — if the server or current conditions call for it.
 Segmentation is also GET-only, because ranged parallelism of a non-idempotent method isn't safe.
@@ -118,6 +122,15 @@ Two mechanisms keep Yukitoki polite and resilient on imperfect networks:
   are retried inside a single download attempt using the request's `RetryPolicy` — exponential backoff
   with random jitter to avoid thundering-herd retries. Non-transient failures (404, checksum mismatch,
   permission denied, no space) fail fast, because a retry would produce the same result.
+
+A connection that drops before the promised bytes arrive is transient too, so it's retried even though
+its final failure is `SizeMismatch`. Failures are classified by where they happened, not by what the
+message says: an I/O error from the disk is a filesystem failure and fails fast, and any other I/O error
+came from the network and is retried. Pausing doesn't count as an attempt.
+
+Single-stream requests ask for `Accept-Encoding: identity`, so the file is the bytes the server stores
+and `Content-Length` can be checked against them. A server that compresses anyway has its body saved as
+sent on JVM and Android, while Darwin decompresses it before Yukitoki sees it.
 
 The idle/stall timeout (`idleTimeout`) is a separate safety net for a specific failure the HTTP
 client's own timeouts miss: a socket that connects and then goes silent forever. It fails the attempt
@@ -158,13 +171,17 @@ with whatever DI and lifecycle framework you already use. The manager runs under
 `SupervisorJob` of your scope, so cancelling your scope reliably tears the manager down, and one
 failed download never cancels the others.
 
+Every teardown ends the same way, whether it's `shutdown`, `close`, or a cancelled scope. The coordinator
+waits for its workers, settles each unfinished download as cancelled, removes its partial file, and
+publishes that final state.
+
 Network and charging constraints (Wi-Fi-only, charging-only) are intentionally *not* part of the
 request model either. They belong to a platform scheduler that decides *whether* to enqueue; Yukitoki's
 job is to execute a download well once you've decided to start it.
 
 ## Where this is a beta
 
-`1.0.0-beta06` is a feature-complete beta. The architecture above is stable and unlikely to change,
+`1.0.0-beta07` is a feature-complete beta. The architecture above is stable and unlikely to change,
 but as a pre-`1.0.0` release the exact shape of some public types may still be refined in response to
 feedback before the stable release. Pin the version you build against and consult the
 [changelog](../../CHANGELOG.md) when upgrading.

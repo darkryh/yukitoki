@@ -71,7 +71,7 @@ Use an exact path with `DownloadDestination.File(path)`. `OverwritePolicy.DEFAUL
 
 ## Custom Ktor client
 
-Yukitoki's bundled engines are not on your compile classpath, so add the engine you name, on the Ktor version Yukitoki uses (`3.6.1` for `1.0.0-beta06`). OkHttp is Android and JVM only, so this code belongs in that platform's source set:
+Yukitoki's bundled engines are not on your compile classpath, so add the engine you name, on the Ktor version Yukitoki uses (`3.6.1` for `1.0.0-beta07`). OkHttp is Android and JVM only, so this code belongs in that platform's source set:
 
 ```kotlin
 androidMain.dependencies {
@@ -99,6 +99,6 @@ manager.shutdown(cancelActive = true)  // suspending cancellation
 manager.shutdown(cancelActive = false) // drain active transfers
 ```
 
-Use one of these. Read results before you shut down. Once a manager is closed, `task.await()` returns `Failure(ManagerClosed)` and `manager.await(id)` returns null, even for a file that was saved. A call already waiting gets the real result from `shutdown`, and `Failure(ManagerClosed)` from `close()`. `state` stops updating after `close()`, so a download that was running keeps showing `Running`. `close()` also leaves the `.part` file of a paused download on disk, while `shutdown` removes it.
+Use one of these. Whichever you pick, every unfinished download ends as `Cancelled` in `state`, its partial file is removed, and `await` keeps working: a saved file still returns `Success`.
 
 Yukitoki is an in-process manager. Its queue is not restored after process death or reboot.

@@ -2,8 +2,11 @@ package io.github.darkryh.yukitoki.manager
 
 import io.ktor.http.Headers
 import io.ktor.http.headersOf
+import kotlinx.browser.document
 import kotlinx.coroutines.test.runTest
+import org.w3c.dom.HTMLIFrameElement
 import kotlin.test.Test
+import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertIs
 import kotlin.test.assertTrue
@@ -62,5 +65,17 @@ class DownloadIntentsWasmTest {
         )
 
         assertIs<DownloadIntentResult.Rejected>(result)
+    }
+
+    @Test
+    fun `a cross-origin download outside a click uses a hidden frame`() = runTest {
+        // A new tab would be blocked here, and navigating the page would tear down the test run.
+        val url = "https://yukitoki-test-unreachable.invalid/report.pdf"
+        val result = DownloadIntents.dispatch(DownloadIntentRequest(url, "report.pdf"))
+
+        assertIs<DownloadIntentResult.Dispatched>(result)
+        val frames = document.querySelectorAll("iframe[src='$url']")
+        assertEquals(1, frames.length)
+        (frames.item(0) as HTMLIFrameElement).remove()
     }
 }

@@ -6,6 +6,7 @@ import kotlinx.browser.document
 import kotlinx.browser.window
 import kotlinx.coroutines.await
 import org.w3c.dom.HTMLAnchorElement
+import org.w3c.dom.HTMLIFrameElement
 import org.w3c.dom.url.URL
 import org.w3c.fetch.RequestInit
 import org.w3c.fetch.Headers as JsFetchHeaders
@@ -13,8 +14,10 @@ import org.w3c.fetch.Headers as JsFetchHeaders
 /**
  * wasm/browser [DownloadIntentRequest] dispatch.
  *
- * With no headers this is a plain `<a download>` anchor click — the browser owns the transfer and
- * there is no way to observe completion, progress, or the saved path.
+ * With no headers the browser owns the transfer, and there is no way to observe completion,
+ * progress, or the saved path. A same-origin URL is a plain `<a download>` click. Across origins the
+ * browser ignores `download` and may display the file, which must not replace the running app, so
+ * this uses a new tab inside a click and a hidden frame outside one, where a new tab gets blocked.
  *
  * With headers (authenticated downloads), a plain anchor cannot carry request headers, so this
  * instead issues a `fetch()` carrying [DownloadIntentRequest.headers], buffers the **entire**
@@ -36,7 +39,13 @@ internal actual object PlatformDownloadIntentDispatcher {
     }
 
     private fun dispatchViaAnchorNavigation(url: String, fileName: String): DownloadIntentResult {
+        val crossOrigin = isCrossOrigin(url)
+        if (crossOrigin && !hasUserActivation()) return dispatchViaHiddenFrame(url)
         val anchor = createHiddenDownloadAnchor(url, fileName)
+        if (crossOrigin) {
+            anchor.target = "_blank"
+            anchor.rel = "noopener"
+        }
         return try {
             anchor.click()
             DownloadIntentResult.Dispatched
@@ -45,6 +54,29 @@ internal actual object PlatformDownloadIntentDispatcher {
         } finally {
             anchor.remove()
         }
+    }
+
+    private fun dispatchViaHiddenFrame(url: String): DownloadIntentResult {
+        val frame = document.createElement("iframe") as HTMLIFrameElement
+        frame.src = url
+        frame.setAttribute("style", "display:none")
+        return try {
+            document.body?.appendChild(frame)
+            // The browser owns a started download, so removing the frame later doesn't cancel it.
+            window.setTimeout({
+                frame.remove()
+                null
+            }, HIDDEN_FRAME_LIFETIME_MILLIS)
+            DownloadIntentResult.Dispatched
+        } catch (t: Throwable) {
+            DownloadIntentResult.Rejected(t.message ?: "Browser rejected download intent.")
+        }
+    }
+
+    private fun isCrossOrigin(url: String): Boolean {
+        val resolved = URL(url, window.location.href)
+        val isHttp = resolved.protocol == "http:" || resolved.protocol == "https:"
+        return isHttp && resolved.origin != window.location.origin
     }
 
     private suspend fun dispatchViaAuthenticatedFetch(
@@ -79,7 +111,8 @@ internal actual object PlatformDownloadIntentDispatcher {
                 }, 0)
             }
         } catch (t: Throwable) {
-            DownloadIntentResult.Rejected(t.message ?: "Browser rejected download intent.")
+            val cause = t.message?.removePrefix("Non-Kotlin exception ")?.substringBefore(" of type '")
+            DownloadIntentResult.Rejected("Download request failed: $cause (a network error, or blocked by CORS).")
         }
     }
 
@@ -87,12 +120,17 @@ internal actual object PlatformDownloadIntentDispatcher {
         val anchor = document.createElement("a") as HTMLAnchorElement
         anchor.href = href
         anchor.download = fileName
-        anchor.rel = "noopener"
         anchor.setAttribute("style", "display:none")
         document.body?.appendChild(anchor)
         return anchor
     }
 }
+
+private const val HIDDEN_FRAME_LIFETIME_MILLIS = 60_000
+
+/** False where the browser lacks the API, which picks the path that works without a click. */
+private fun hasUserActivation(): Boolean =
+    js("(typeof navigator.userActivation !== 'undefined' && navigator.userActivation.isActive)")
 
 /**
  * Builds a minimal `RequestInit` carrying only `method`/`headers`. The `RequestInit(...)` factory

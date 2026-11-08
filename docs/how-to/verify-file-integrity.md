@@ -22,7 +22,8 @@ manager.enqueue(
 ```
 
 The manager also cross-checks the server's `Content-Length` while streaming, so a truncated response
-is caught even without `expectedBytes`.
+is caught even without `expectedBytes`. It's retried first, because a connection that drops can succeed
+on the next attempt.
 
 ## Check the content hash
 
