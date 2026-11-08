@@ -41,7 +41,7 @@ Await completion:
 
 ```kotlin
 when (val result = task.await()) {
-    is DownloadResult.Success -> println(result.success.finalPath)
+    is DownloadResult.Success -> println(result.file.path)
     is DownloadResult.Failure -> println(result.failure)
     DownloadResult.Cancelled -> println("cancelled")
 }

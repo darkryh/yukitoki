@@ -52,6 +52,12 @@ kotlin {
         iosArm64Main.get().dependsOn(iosMain)
         iosX64Main.get().dependsOn(iosMain)
         iosSimulatorArm64Main.get().dependsOn(iosMain)
+        val iosTest = create("iosTest") {
+            dependsOn(commonTest.get())
+        }
+        iosArm64Test.get().dependsOn(iosTest)
+        iosX64Test.get().dependsOn(iosTest)
+        iosSimulatorArm64Test.get().dependsOn(iosTest)
 
         commonMain.dependencies {
             api(libs.ktor.client.core)

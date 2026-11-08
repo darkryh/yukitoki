@@ -1,6 +1,6 @@
 # Scoped for a LIBRARY: one publishable unit, so there is no backend/frontend axis to group
 # along. Grouping follows blast radius on consumers instead — the build toolchain (Kotlin, AGP,
-# KSP, Compose, the Gradle wrapper, the publishing plugin, binary-compatibility-validator) can
+# Compose, the Gradle wrapper, the publishing plugin) can
 # change compilation output and ABI, so it is reviewed on its own; everything else rolls up.
 # Monthly, so at most 3 pull requests per month reach CI.
 version: 2
@@ -26,23 +26,19 @@ updates:
         patterns:
           - "kotlin"
           - "agp"
-          - "ksp"
           - "compose"
           - "compose-runtime"
           - "compose-multiplatform"
           - "gradle-wrapper"
           - "vanniktech-maven-publish"
           - "maven-publish"
-          - "binary-compatibility*"
           # `org.jetbrains.kotlin:*` keeps the colon on purpose: `org.jetbrains.kotlin*` would
           # also swallow org.jetbrains.kotlinx coroutines/serialization, which belong below.
           - "org.jetbrains.kotlin:*"
           - "org.jetbrains.kotlin.*"
           - "org.jetbrains.compose*"
           - "com.android.*"
-          - "com.google.devtools.ksp*"
           - "com.vanniktech.maven.publish*"
-          - "org.jetbrains.kotlinx.binary-compatibility-validator*"
       library-dependencies:
         # Catch-all: anything not matched above rolls into one pull request rather than
         # getting one of its own.

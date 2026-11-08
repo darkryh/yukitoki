@@ -82,11 +82,11 @@ class DownloadManagerJvmConcurrencyTest {
                     httpClient = client,
                     scope = scope,
                     fileSystem = fs,
-                    config = DownloadManagerConfig(concurrency = DownloadConcurrency.Fixed(4)),
+                    config = DownloadManagerConfig(maxConcurrentDownloads = 4),
                 )
                 val ids = (1..24).map { i ->
                     val id = DownloadId.new()
-                    manager.submitInternal(
+                    manager.submitCommand(
                         DownloadCommand.Enqueue(
                             id = id,
                             request = DownloadRequest(
@@ -106,7 +106,7 @@ class DownloadManagerJvmConcurrencyTest {
                 // the coordinator/worker boundary.
                 scope.launch {
                     repeat(20) {
-                        manager.submitInternal(DownloadCommand.SetConcurrency(DownloadConcurrency.Fixed((it % 4) + 1)))
+                        manager.submitCommand(DownloadCommand.SetMaxConcurrentDownloads(((it % 4) + 1)))
                     }
                 }
 
@@ -148,7 +148,7 @@ class DownloadManagerJvmConcurrencyTest {
                 config = DownloadManagerConfig(idleTimeout = 300.milliseconds),
             )
             val id = DownloadId.new()
-            manager.submitInternal(
+            manager.submitCommand(
                 DownloadCommand.Enqueue(
                     id = id,
                     request = DownloadRequest(

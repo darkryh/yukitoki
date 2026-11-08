@@ -23,75 +23,58 @@ public abstract interface class io/github/darkryh/yukitoki/manager/CommandResult
 }
 
 public final class io/github/darkryh/yukitoki/manager/CommandResult$Accepted : io/github/darkryh/yukitoki/manager/CommandResult {
-	public fun <init> ()V
-	public synthetic fun <init> (Ljava/lang/String;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
-	public synthetic fun <init> (Ljava/lang/String;Lkotlin/jvm/internal/DefaultConstructorMarker;)V
-	public final fun component1-3_t2-8g ()Ljava/lang/String;
-	public final fun copy-obb0PqE (Ljava/lang/String;)Lio/github/darkryh/yukitoki/manager/CommandResult$Accepted;
-	public static synthetic fun copy-obb0PqE$default (Lio/github/darkryh/yukitoki/manager/CommandResult$Accepted;Ljava/lang/String;ILjava/lang/Object;)Lio/github/darkryh/yukitoki/manager/CommandResult$Accepted;
+	public static final field INSTANCE Lio/github/darkryh/yukitoki/manager/CommandResult$Accepted;
 	public fun equals (Ljava/lang/Object;)Z
-	public final fun getId-3_t2-8g ()Ljava/lang/String;
 	public fun hashCode ()I
 	public fun toString ()Ljava/lang/String;
 }
 
-public final class io/github/darkryh/yukitoki/manager/CommandResult$Rejected : io/github/darkryh/yukitoki/manager/CommandResult {
-	public fun <init> (Ljava/lang/String;Lio/github/darkryh/yukitoki/manager/DownloadFailure;)V
-	public synthetic fun <init> (Ljava/lang/String;Lio/github/darkryh/yukitoki/manager/DownloadFailure;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
-	public final fun component1 ()Ljava/lang/String;
-	public final fun component2 ()Lio/github/darkryh/yukitoki/manager/DownloadFailure;
-	public final fun copy (Ljava/lang/String;Lio/github/darkryh/yukitoki/manager/DownloadFailure;)Lio/github/darkryh/yukitoki/manager/CommandResult$Rejected;
-	public static synthetic fun copy$default (Lio/github/darkryh/yukitoki/manager/CommandResult$Rejected;Ljava/lang/String;Lio/github/darkryh/yukitoki/manager/DownloadFailure;ILjava/lang/Object;)Lio/github/darkryh/yukitoki/manager/CommandResult$Rejected;
+public abstract interface class io/github/darkryh/yukitoki/manager/CommandResult$Rejected : io/github/darkryh/yukitoki/manager/CommandResult {
+}
+
+public final class io/github/darkryh/yukitoki/manager/CommandResult$Rejected$Failed : io/github/darkryh/yukitoki/manager/CommandResult$Rejected {
+	public fun <init> (Lio/github/darkryh/yukitoki/manager/DownloadFailure;)V
+	public final fun component1 ()Lio/github/darkryh/yukitoki/manager/DownloadFailure;
+	public final fun copy (Lio/github/darkryh/yukitoki/manager/DownloadFailure;)Lio/github/darkryh/yukitoki/manager/CommandResult$Rejected$Failed;
+	public static synthetic fun copy$default (Lio/github/darkryh/yukitoki/manager/CommandResult$Rejected$Failed;Lio/github/darkryh/yukitoki/manager/DownloadFailure;ILjava/lang/Object;)Lio/github/darkryh/yukitoki/manager/CommandResult$Rejected$Failed;
 	public fun equals (Ljava/lang/Object;)Z
 	public final fun getFailure ()Lio/github/darkryh/yukitoki/manager/DownloadFailure;
-	public final fun getReason ()Ljava/lang/String;
 	public fun hashCode ()I
 	public fun toString ()Ljava/lang/String;
 }
 
-public final class io/github/darkryh/yukitoki/manager/DefaultDownloadManager : io/github/darkryh/yukitoki/manager/DownloadManager {
-	public fun <init> (Lio/ktor/client/HttpClient;Lkotlinx/coroutines/CoroutineScope;Lokio/FileSystem;Lio/github/darkryh/yukitoki/manager/DownloadManagerConfig;Lkotlinx/coroutines/CoroutineDispatcher;)V
-	public synthetic fun <init> (Lio/ktor/client/HttpClient;Lkotlinx/coroutines/CoroutineScope;Lokio/FileSystem;Lio/github/darkryh/yukitoki/manager/DownloadManagerConfig;Lkotlinx/coroutines/CoroutineDispatcher;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
-	public fun await-u2uZ_fE (Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
-	public fun cancel-u2uZ_fE (Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
-	public fun cancelAll (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
-	public fun clearFinished (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
-	public fun close ()V
-	public fun download (Lio/github/darkryh/yukitoki/manager/DownloadRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
-	public fun download (Ljava/lang/String;Lio/github/darkryh/yukitoki/manager/DownloadDestination;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
-	public fun enqueue (Ljava/lang/String;Lio/github/darkryh/yukitoki/manager/DownloadDestination;Lio/github/darkryh/yukitoki/manager/DownloadPriority;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
-	public fun enqueue-_GVROGs (Lio/github/darkryh/yukitoki/manager/DownloadRequest;Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
-	public fun getState ()Lkotlinx/coroutines/flow/StateFlow;
-	public fun moveWithinPriority-03esztg (Ljava/lang/String;ILkotlin/coroutines/Continuation;)Ljava/lang/Object;
-	public fun observe-JGzc3fk (Ljava/lang/String;)Lkotlinx/coroutines/flow/Flow;
-	public fun pause-u2uZ_fE (Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
-	public fun pauseAll (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
-	public fun remove-03esztg (Ljava/lang/String;ZLkotlin/coroutines/Continuation;)Ljava/lang/Object;
-	public fun resume-u2uZ_fE (Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
-	public fun resumeAll (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
-	public fun retry-u2uZ_fE (Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
-	public fun retryAllFailed (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
-	public fun setConcurrency (Lio/github/darkryh/yukitoki/manager/DownloadConcurrency;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
-	public fun shutdown (ZLkotlin/coroutines/Continuation;)Ljava/lang/Object;
-}
-
-public abstract interface class io/github/darkryh/yukitoki/manager/DownloadConcurrency {
-}
-
-public final class io/github/darkryh/yukitoki/manager/DownloadConcurrency$Default : io/github/darkryh/yukitoki/manager/DownloadConcurrency {
-	public static final field INSTANCE Lio/github/darkryh/yukitoki/manager/DownloadConcurrency$Default;
-	public fun equals (Ljava/lang/Object;)Z
-	public fun hashCode ()I
-	public fun toString ()Ljava/lang/String;
-}
-
-public final class io/github/darkryh/yukitoki/manager/DownloadConcurrency$Fixed : io/github/darkryh/yukitoki/manager/DownloadConcurrency {
+public final class io/github/darkryh/yukitoki/manager/CommandResult$Rejected$InvalidPosition : io/github/darkryh/yukitoki/manager/CommandResult$Rejected {
 	public fun <init> (I)V
 	public final fun component1 ()I
-	public final fun copy (I)Lio/github/darkryh/yukitoki/manager/DownloadConcurrency$Fixed;
-	public static synthetic fun copy$default (Lio/github/darkryh/yukitoki/manager/DownloadConcurrency$Fixed;IILjava/lang/Object;)Lio/github/darkryh/yukitoki/manager/DownloadConcurrency$Fixed;
+	public final fun copy (I)Lio/github/darkryh/yukitoki/manager/CommandResult$Rejected$InvalidPosition;
+	public static synthetic fun copy$default (Lio/github/darkryh/yukitoki/manager/CommandResult$Rejected$InvalidPosition;IILjava/lang/Object;)Lio/github/darkryh/yukitoki/manager/CommandResult$Rejected$InvalidPosition;
 	public fun equals (Ljava/lang/Object;)Z
-	public final fun getDownloads ()I
+	public final fun getPosition ()I
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class io/github/darkryh/yukitoki/manager/CommandResult$Rejected$InvalidState : io/github/darkryh/yukitoki/manager/CommandResult$Rejected {
+	public fun <init> (Lio/github/darkryh/yukitoki/manager/DownloadState;)V
+	public final fun component1 ()Lio/github/darkryh/yukitoki/manager/DownloadState;
+	public final fun copy (Lio/github/darkryh/yukitoki/manager/DownloadState;)Lio/github/darkryh/yukitoki/manager/CommandResult$Rejected$InvalidState;
+	public static synthetic fun copy$default (Lio/github/darkryh/yukitoki/manager/CommandResult$Rejected$InvalidState;Lio/github/darkryh/yukitoki/manager/DownloadState;ILjava/lang/Object;)Lio/github/darkryh/yukitoki/manager/CommandResult$Rejected$InvalidState;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getState ()Lio/github/darkryh/yukitoki/manager/DownloadState;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class io/github/darkryh/yukitoki/manager/CommandResult$Rejected$ManagerClosed : io/github/darkryh/yukitoki/manager/CommandResult$Rejected {
+	public static final field INSTANCE Lio/github/darkryh/yukitoki/manager/CommandResult$Rejected$ManagerClosed;
+	public fun equals (Ljava/lang/Object;)Z
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class io/github/darkryh/yukitoki/manager/CommandResult$Rejected$NotFound : io/github/darkryh/yukitoki/manager/CommandResult$Rejected {
+	public static final field INSTANCE Lio/github/darkryh/yukitoki/manager/CommandResult$Rejected$NotFound;
+	public fun equals (Ljava/lang/Object;)Z
 	public fun hashCode ()I
 	public fun toString ()Ljava/lang/String;
 }
@@ -135,15 +118,11 @@ public abstract interface class io/github/darkryh/yukitoki/manager/DownloadFailu
 }
 
 public final class io/github/darkryh/yukitoki/manager/DownloadFailure$AlreadyExists : io/github/darkryh/yukitoki/manager/DownloadFailure {
-	public fun <init> ()V
-	public fun <init> (Lokio/Path;Ljava/lang/String;)V
-	public synthetic fun <init> (Lokio/Path;Ljava/lang/String;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public fun <init> (Lokio/Path;)V
 	public final fun component1 ()Lokio/Path;
-	public final fun component2 ()Ljava/lang/String;
-	public final fun copy (Lokio/Path;Ljava/lang/String;)Lio/github/darkryh/yukitoki/manager/DownloadFailure$AlreadyExists;
-	public static synthetic fun copy$default (Lio/github/darkryh/yukitoki/manager/DownloadFailure$AlreadyExists;Lokio/Path;Ljava/lang/String;ILjava/lang/Object;)Lio/github/darkryh/yukitoki/manager/DownloadFailure$AlreadyExists;
+	public final fun copy (Lokio/Path;)Lio/github/darkryh/yukitoki/manager/DownloadFailure$AlreadyExists;
+	public static synthetic fun copy$default (Lio/github/darkryh/yukitoki/manager/DownloadFailure$AlreadyExists;Lokio/Path;ILjava/lang/Object;)Lio/github/darkryh/yukitoki/manager/DownloadFailure$AlreadyExists;
 	public fun equals (Ljava/lang/Object;)Z
-	public final fun getMessage ()Ljava/lang/String;
 	public final fun getPath ()Lokio/Path;
 	public fun hashCode ()I
 	public fun toString ()Ljava/lang/String;
@@ -189,28 +168,9 @@ public final class io/github/darkryh/yukitoki/manager/DownloadFailure$HttpStatus
 	public fun toString ()Ljava/lang/String;
 }
 
-public final class io/github/darkryh/yukitoki/manager/DownloadFailure$IntegrityMismatch : io/github/darkryh/yukitoki/manager/DownloadFailure {
-	public fun <init> (JJ)V
-	public final fun component1 ()J
-	public final fun component2 ()J
-	public final fun copy (JJ)Lio/github/darkryh/yukitoki/manager/DownloadFailure$IntegrityMismatch;
-	public static synthetic fun copy$default (Lio/github/darkryh/yukitoki/manager/DownloadFailure$IntegrityMismatch;JJILjava/lang/Object;)Lio/github/darkryh/yukitoki/manager/DownloadFailure$IntegrityMismatch;
-	public fun equals (Ljava/lang/Object;)Z
-	public final fun getActualSize ()J
-	public final fun getExpectedSize ()J
-	public fun hashCode ()I
-	public fun toString ()Ljava/lang/String;
-}
-
 public final class io/github/darkryh/yukitoki/manager/DownloadFailure$ManagerClosed : io/github/darkryh/yukitoki/manager/DownloadFailure {
-	public fun <init> ()V
-	public fun <init> (Ljava/lang/String;)V
-	public synthetic fun <init> (Ljava/lang/String;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
-	public final fun component1 ()Ljava/lang/String;
-	public final fun copy (Ljava/lang/String;)Lio/github/darkryh/yukitoki/manager/DownloadFailure$ManagerClosed;
-	public static synthetic fun copy$default (Lio/github/darkryh/yukitoki/manager/DownloadFailure$ManagerClosed;Ljava/lang/String;ILjava/lang/Object;)Lio/github/darkryh/yukitoki/manager/DownloadFailure$ManagerClosed;
+	public static final field INSTANCE Lio/github/darkryh/yukitoki/manager/DownloadFailure$ManagerClosed;
 	public fun equals (Ljava/lang/Object;)Z
-	public final fun getMessage ()Ljava/lang/String;
 	public fun hashCode ()I
 	public fun toString ()Ljava/lang/String;
 }
@@ -227,9 +187,7 @@ public final class io/github/darkryh/yukitoki/manager/DownloadFailure$Network : 
 }
 
 public final class io/github/darkryh/yukitoki/manager/DownloadFailure$NoSpace : io/github/darkryh/yukitoki/manager/DownloadFailure {
-	public fun <init> ()V
 	public fun <init> (Lokio/Path;Ljava/lang/String;)V
-	public synthetic fun <init> (Lokio/Path;Ljava/lang/String;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
 	public final fun component1 ()Lokio/Path;
 	public final fun component2 ()Ljava/lang/String;
 	public final fun copy (Lokio/Path;Ljava/lang/String;)Lio/github/darkryh/yukitoki/manager/DownloadFailure$NoSpace;
@@ -242,9 +200,7 @@ public final class io/github/darkryh/yukitoki/manager/DownloadFailure$NoSpace : 
 }
 
 public final class io/github/darkryh/yukitoki/manager/DownloadFailure$PermissionDenied : io/github/darkryh/yukitoki/manager/DownloadFailure {
-	public fun <init> ()V
 	public fun <init> (Lokio/Path;Ljava/lang/String;)V
-	public synthetic fun <init> (Lokio/Path;Ljava/lang/String;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
 	public final fun component1 ()Lokio/Path;
 	public final fun component2 ()Ljava/lang/String;
 	public final fun copy (Lokio/Path;Ljava/lang/String;)Lio/github/darkryh/yukitoki/manager/DownloadFailure$PermissionDenied;
@@ -263,6 +219,19 @@ public final class io/github/darkryh/yukitoki/manager/DownloadFailure$ServerChan
 	public static synthetic fun copy$default (Lio/github/darkryh/yukitoki/manager/DownloadFailure$ServerChanged;Ljava/lang/String;ILjava/lang/Object;)Lio/github/darkryh/yukitoki/manager/DownloadFailure$ServerChanged;
 	public fun equals (Ljava/lang/Object;)Z
 	public final fun getMessage ()Ljava/lang/String;
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
+}
+
+public final class io/github/darkryh/yukitoki/manager/DownloadFailure$SizeMismatch : io/github/darkryh/yukitoki/manager/DownloadFailure {
+	public fun <init> (JJ)V
+	public final fun component1 ()J
+	public final fun component2 ()J
+	public final fun copy (JJ)Lio/github/darkryh/yukitoki/manager/DownloadFailure$SizeMismatch;
+	public static synthetic fun copy$default (Lio/github/darkryh/yukitoki/manager/DownloadFailure$SizeMismatch;JJILjava/lang/Object;)Lio/github/darkryh/yukitoki/manager/DownloadFailure$SizeMismatch;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getActualBytes ()J
+	public final fun getExpectedBytes ()J
 	public fun hashCode ()I
 	public fun toString ()Ljava/lang/String;
 }
@@ -289,19 +258,7 @@ public final class io/github/darkryh/yukitoki/manager/DownloadFailure$Unexpected
 	public fun toString ()Ljava/lang/String;
 }
 
-public final class io/github/darkryh/yukitoki/manager/DownloadFailure$Unsupported : io/github/darkryh/yukitoki/manager/DownloadFailure {
-	public fun <init> (Ljava/lang/String;)V
-	public final fun component1 ()Ljava/lang/String;
-	public final fun copy (Ljava/lang/String;)Lio/github/darkryh/yukitoki/manager/DownloadFailure$Unsupported;
-	public static synthetic fun copy$default (Lio/github/darkryh/yukitoki/manager/DownloadFailure$Unsupported;Ljava/lang/String;ILjava/lang/Object;)Lio/github/darkryh/yukitoki/manager/DownloadFailure$Unsupported;
-	public fun equals (Ljava/lang/Object;)Z
-	public final fun getMessage ()Ljava/lang/String;
-	public fun hashCode ()I
-	public fun toString ()Ljava/lang/String;
-}
-
 public final class io/github/darkryh/yukitoki/manager/DownloadId {
-	public static final field Companion Lio/github/darkryh/yukitoki/manager/DownloadId$Companion;
 	public static final synthetic fun box-impl (Ljava/lang/String;)Lio/github/darkryh/yukitoki/manager/DownloadId;
 	public static fun constructor-impl (Ljava/lang/String;)Ljava/lang/String;
 	public fun equals (Ljava/lang/Object;)Z
@@ -315,10 +272,6 @@ public final class io/github/darkryh/yukitoki/manager/DownloadId {
 	public final synthetic fun unbox-impl ()Ljava/lang/String;
 }
 
-public final class io/github/darkryh/yukitoki/manager/DownloadId$Companion {
-	public final fun new-JutTL0M ()Ljava/lang/String;
-}
-
 public final class io/github/darkryh/yukitoki/manager/DownloadIntentRequest {
 	public fun <init> (Ljava/lang/String;Ljava/lang/String;Lio/ktor/http/Headers;)V
 	public synthetic fun <init> (Ljava/lang/String;Ljava/lang/String;Lio/ktor/http/Headers;ILkotlin/jvm/internal/DefaultConstructorMarker;)V
@@ -328,8 +281,8 @@ public final class io/github/darkryh/yukitoki/manager/DownloadIntentRequest {
 	public final fun copy (Ljava/lang/String;Ljava/lang/String;Lio/ktor/http/Headers;)Lio/github/darkryh/yukitoki/manager/DownloadIntentRequest;
 	public static synthetic fun copy$default (Lio/github/darkryh/yukitoki/manager/DownloadIntentRequest;Ljava/lang/String;Ljava/lang/String;Lio/ktor/http/Headers;ILjava/lang/Object;)Lio/github/darkryh/yukitoki/manager/DownloadIntentRequest;
 	public fun equals (Ljava/lang/Object;)Z
+	public final fun getFileName ()Ljava/lang/String;
 	public final fun getHeaders ()Lio/ktor/http/Headers;
-	public final fun getSuggestedFileName ()Ljava/lang/String;
 	public final fun getUrl ()Ljava/lang/String;
 	public fun hashCode ()I
 	public fun toString ()Ljava/lang/String;
@@ -376,12 +329,9 @@ public abstract interface class io/github/darkryh/yukitoki/manager/DownloadManag
 	public abstract fun clearFinished (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public abstract fun close ()V
 	public abstract fun download (Lio/github/darkryh/yukitoki/manager/DownloadRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
-	public fun download (Ljava/lang/String;Lio/github/darkryh/yukitoki/manager/DownloadDestination;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
-	public static synthetic fun download$default (Lio/github/darkryh/yukitoki/manager/DownloadManager;Ljava/lang/String;Lio/github/darkryh/yukitoki/manager/DownloadDestination;Lkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
+	public abstract fun enqueue (Lio/github/darkryh/yukitoki/manager/DownloadRequest;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public fun enqueue (Ljava/lang/String;Lio/github/darkryh/yukitoki/manager/DownloadDestination;Lio/github/darkryh/yukitoki/manager/DownloadPriority;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public static synthetic fun enqueue$default (Lio/github/darkryh/yukitoki/manager/DownloadManager;Ljava/lang/String;Lio/github/darkryh/yukitoki/manager/DownloadDestination;Lio/github/darkryh/yukitoki/manager/DownloadPriority;Lkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
-	public abstract fun enqueue-_GVROGs (Lio/github/darkryh/yukitoki/manager/DownloadRequest;Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
-	public static synthetic fun enqueue-_GVROGs$default (Lio/github/darkryh/yukitoki/manager/DownloadManager;Lio/github/darkryh/yukitoki/manager/DownloadRequest;Ljava/lang/String;Lkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
 	public abstract fun getState ()Lkotlinx/coroutines/flow/StateFlow;
 	public abstract fun moveWithinPriority-03esztg (Ljava/lang/String;ILkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public abstract fun observe-JGzc3fk (Ljava/lang/String;)Lkotlinx/coroutines/flow/Flow;
@@ -393,7 +343,7 @@ public abstract interface class io/github/darkryh/yukitoki/manager/DownloadManag
 	public abstract fun resumeAll (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public abstract fun retry-u2uZ_fE (Ljava/lang/String;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public abstract fun retryAllFailed (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
-	public abstract fun setConcurrency (Lio/github/darkryh/yukitoki/manager/DownloadConcurrency;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+	public abstract fun setMaxConcurrentDownloads (ILkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public abstract fun shutdown (ZLkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public static synthetic fun shutdown$default (Lio/github/darkryh/yukitoki/manager/DownloadManager;ZLkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
 }
@@ -406,33 +356,30 @@ public final class io/github/darkryh/yukitoki/manager/DownloadManager$Companion 
 }
 
 public final class io/github/darkryh/yukitoki/manager/DownloadManager$DefaultImpls {
-	public static fun download (Lio/github/darkryh/yukitoki/manager/DownloadManager;Ljava/lang/String;Lio/github/darkryh/yukitoki/manager/DownloadDestination;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
-	public static synthetic fun download$default (Lio/github/darkryh/yukitoki/manager/DownloadManager;Ljava/lang/String;Lio/github/darkryh/yukitoki/manager/DownloadDestination;Lkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
 	public static fun enqueue (Lio/github/darkryh/yukitoki/manager/DownloadManager;Ljava/lang/String;Lio/github/darkryh/yukitoki/manager/DownloadDestination;Lio/github/darkryh/yukitoki/manager/DownloadPriority;Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public static synthetic fun enqueue$default (Lio/github/darkryh/yukitoki/manager/DownloadManager;Ljava/lang/String;Lio/github/darkryh/yukitoki/manager/DownloadDestination;Lio/github/darkryh/yukitoki/manager/DownloadPriority;Lkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
-	public static synthetic fun enqueue-_GVROGs$default (Lio/github/darkryh/yukitoki/manager/DownloadManager;Lio/github/darkryh/yukitoki/manager/DownloadRequest;Ljava/lang/String;Lkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
 	public static synthetic fun remove-03esztg$default (Lio/github/darkryh/yukitoki/manager/DownloadManager;Ljava/lang/String;ZLkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
 	public static synthetic fun shutdown$default (Lio/github/darkryh/yukitoki/manager/DownloadManager;ZLkotlin/coroutines/Continuation;ILjava/lang/Object;)Ljava/lang/Object;
 }
 
 public final class io/github/darkryh/yukitoki/manager/DownloadManagerConfig {
 	public fun <init> ()V
-	public synthetic fun <init> (Lio/github/darkryh/yukitoki/manager/DownloadConcurrency;IZZJIILkotlin/jvm/internal/DefaultConstructorMarker;)V
-	public synthetic fun <init> (Lio/github/darkryh/yukitoki/manager/DownloadConcurrency;IZZJILkotlin/jvm/internal/DefaultConstructorMarker;)V
-	public final fun component1 ()Lio/github/darkryh/yukitoki/manager/DownloadConcurrency;
+	public synthetic fun <init> (IIZZJIILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public synthetic fun <init> (IIZZJILkotlin/jvm/internal/DefaultConstructorMarker;)V
+	public final fun component1 ()I
 	public final fun component2 ()I
 	public final fun component3 ()Z
 	public final fun component4 ()Z
 	public final fun component5-UwyO8pc ()J
 	public final fun component6 ()I
-	public final fun copy-myKFqkg (Lio/github/darkryh/yukitoki/manager/DownloadConcurrency;IZZJI)Lio/github/darkryh/yukitoki/manager/DownloadManagerConfig;
-	public static synthetic fun copy-myKFqkg$default (Lio/github/darkryh/yukitoki/manager/DownloadManagerConfig;Lio/github/darkryh/yukitoki/manager/DownloadConcurrency;IZZJIILjava/lang/Object;)Lio/github/darkryh/yukitoki/manager/DownloadManagerConfig;
+	public final fun copy-myKFqkg (IIZZJI)Lio/github/darkryh/yukitoki/manager/DownloadManagerConfig;
+	public static synthetic fun copy-myKFqkg$default (Lio/github/darkryh/yukitoki/manager/DownloadManagerConfig;IIZZJIILjava/lang/Object;)Lio/github/darkryh/yukitoki/manager/DownloadManagerConfig;
 	public fun equals (Ljava/lang/Object;)Z
 	public final fun getBufferSizeBytes ()I
-	public final fun getConcurrency ()Lio/github/darkryh/yukitoki/manager/DownloadConcurrency;
 	public final fun getDeletePartialOnCancel ()Z
 	public final fun getDeletePartialOnFailure ()Z
 	public final fun getIdleTimeout-UwyO8pc ()J
+	public final fun getMaxConcurrentDownloads ()I
 	public final fun getMaxRetainedFinished ()I
 	public fun hashCode ()I
 	public fun toString ()Ljava/lang/String;
@@ -504,8 +451,8 @@ public final class io/github/darkryh/yukitoki/manager/DownloadRequest {
 	public static synthetic fun copy$default (Lio/github/darkryh/yukitoki/manager/DownloadRequest;Ljava/lang/String;Lio/github/darkryh/yukitoki/manager/DownloadDestination;Lio/ktor/http/Headers;Lio/github/darkryh/yukitoki/manager/OverwritePolicy;Lio/github/darkryh/yukitoki/manager/RetryPolicy;Ljava/lang/Long;Lio/github/darkryh/yukitoki/manager/ProgressGranularity;Lio/github/darkryh/yukitoki/manager/DownloadPriority;Lio/github/darkryh/yukitoki/manager/DownloadSegmentation;Lio/github/darkryh/yukitoki/manager/ChecksumSpec;ILjava/lang/Object;)Lio/github/darkryh/yukitoki/manager/DownloadRequest;
 	public fun equals (Ljava/lang/Object;)Z
 	public final fun getDestination ()Lio/github/darkryh/yukitoki/manager/DownloadDestination;
+	public final fun getExpectedBytes ()Ljava/lang/Long;
 	public final fun getExpectedChecksum ()Lio/github/darkryh/yukitoki/manager/ChecksumSpec;
-	public final fun getExpectedSizeBytes ()Ljava/lang/Long;
 	public final fun getHeaders ()Lio/ktor/http/Headers;
 	public final fun getOverwritePolicy ()Lio/github/darkryh/yukitoki/manager/OverwritePolicy;
 	public final fun getPriority ()Lio/github/darkryh/yukitoki/manager/DownloadPriority;
@@ -539,12 +486,12 @@ public final class io/github/darkryh/yukitoki/manager/DownloadResult$Failure : i
 }
 
 public final class io/github/darkryh/yukitoki/manager/DownloadResult$Success : io/github/darkryh/yukitoki/manager/DownloadResult {
-	public fun <init> (Lio/github/darkryh/yukitoki/manager/DownloadSuccess;)V
-	public final fun component1 ()Lio/github/darkryh/yukitoki/manager/DownloadSuccess;
-	public final fun copy (Lio/github/darkryh/yukitoki/manager/DownloadSuccess;)Lio/github/darkryh/yukitoki/manager/DownloadResult$Success;
-	public static synthetic fun copy$default (Lio/github/darkryh/yukitoki/manager/DownloadResult$Success;Lio/github/darkryh/yukitoki/manager/DownloadSuccess;ILjava/lang/Object;)Lio/github/darkryh/yukitoki/manager/DownloadResult$Success;
+	public fun <init> (Lio/github/darkryh/yukitoki/manager/DownloadedFile;)V
+	public final fun component1 ()Lio/github/darkryh/yukitoki/manager/DownloadedFile;
+	public final fun copy (Lio/github/darkryh/yukitoki/manager/DownloadedFile;)Lio/github/darkryh/yukitoki/manager/DownloadResult$Success;
+	public static synthetic fun copy$default (Lio/github/darkryh/yukitoki/manager/DownloadResult$Success;Lio/github/darkryh/yukitoki/manager/DownloadedFile;ILjava/lang/Object;)Lio/github/darkryh/yukitoki/manager/DownloadResult$Success;
 	public fun equals (Ljava/lang/Object;)Z
-	public final fun getSuccess ()Lio/github/darkryh/yukitoki/manager/DownloadSuccess;
+	public final fun getFile ()Lio/github/darkryh/yukitoki/manager/DownloadedFile;
 	public fun hashCode ()I
 	public fun toString ()Ljava/lang/String;
 }
@@ -565,7 +512,7 @@ public final class io/github/darkryh/yukitoki/manager/DownloadSegmentation$MaxSe
 	public final fun copy (I)Lio/github/darkryh/yukitoki/manager/DownloadSegmentation$MaxSegments;
 	public static synthetic fun copy$default (Lio/github/darkryh/yukitoki/manager/DownloadSegmentation$MaxSegments;IILjava/lang/Object;)Lio/github/darkryh/yukitoki/manager/DownloadSegmentation$MaxSegments;
 	public fun equals (Ljava/lang/Object;)Z
-	public final fun getSegments ()I
+	public final fun getCount ()I
 	public fun hashCode ()I
 	public fun toString ()Ljava/lang/String;
 }
@@ -666,27 +613,12 @@ public final class io/github/darkryh/yukitoki/manager/DownloadState$Starting : i
 }
 
 public final class io/github/darkryh/yukitoki/manager/DownloadState$Succeeded : io/github/darkryh/yukitoki/manager/DownloadState {
-	public fun <init> (Lio/github/darkryh/yukitoki/manager/DownloadSuccess;)V
-	public final fun component1 ()Lio/github/darkryh/yukitoki/manager/DownloadSuccess;
-	public final fun copy (Lio/github/darkryh/yukitoki/manager/DownloadSuccess;)Lio/github/darkryh/yukitoki/manager/DownloadState$Succeeded;
-	public static synthetic fun copy$default (Lio/github/darkryh/yukitoki/manager/DownloadState$Succeeded;Lio/github/darkryh/yukitoki/manager/DownloadSuccess;ILjava/lang/Object;)Lio/github/darkryh/yukitoki/manager/DownloadState$Succeeded;
+	public fun <init> (Lio/github/darkryh/yukitoki/manager/DownloadedFile;)V
+	public final fun component1 ()Lio/github/darkryh/yukitoki/manager/DownloadedFile;
+	public final fun copy (Lio/github/darkryh/yukitoki/manager/DownloadedFile;)Lio/github/darkryh/yukitoki/manager/DownloadState$Succeeded;
+	public static synthetic fun copy$default (Lio/github/darkryh/yukitoki/manager/DownloadState$Succeeded;Lio/github/darkryh/yukitoki/manager/DownloadedFile;ILjava/lang/Object;)Lio/github/darkryh/yukitoki/manager/DownloadState$Succeeded;
 	public fun equals (Ljava/lang/Object;)Z
-	public final fun getResult ()Lio/github/darkryh/yukitoki/manager/DownloadSuccess;
-	public fun hashCode ()I
-	public fun toString ()Ljava/lang/String;
-}
-
-public final class io/github/darkryh/yukitoki/manager/DownloadSuccess {
-	public fun <init> (Lokio/Path;JLjava/lang/Long;)V
-	public final fun component1 ()Lokio/Path;
-	public final fun component2 ()J
-	public final fun component3 ()Ljava/lang/Long;
-	public final fun copy (Lokio/Path;JLjava/lang/Long;)Lio/github/darkryh/yukitoki/manager/DownloadSuccess;
-	public static synthetic fun copy$default (Lio/github/darkryh/yukitoki/manager/DownloadSuccess;Lokio/Path;JLjava/lang/Long;ILjava/lang/Object;)Lio/github/darkryh/yukitoki/manager/DownloadSuccess;
-	public fun equals (Ljava/lang/Object;)Z
-	public final fun getBytesDownloaded ()J
-	public final fun getFinalPath ()Lokio/Path;
-	public final fun getTotalBytes ()Ljava/lang/Long;
+	public final fun getFile ()Lio/github/darkryh/yukitoki/manager/DownloadedFile;
 	public fun hashCode ()I
 	public fun toString ()Ljava/lang/String;
 }
@@ -699,6 +631,19 @@ public abstract interface class io/github/darkryh/yukitoki/manager/DownloadTask 
 	public abstract fun pause (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public abstract fun resume (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
 	public abstract fun retry (Lkotlin/coroutines/Continuation;)Ljava/lang/Object;
+}
+
+public final class io/github/darkryh/yukitoki/manager/DownloadedFile {
+	public fun <init> (Lokio/Path;J)V
+	public final fun component1 ()Lokio/Path;
+	public final fun component2 ()J
+	public final fun copy (Lokio/Path;J)Lio/github/darkryh/yukitoki/manager/DownloadedFile;
+	public static synthetic fun copy$default (Lio/github/darkryh/yukitoki/manager/DownloadedFile;Lokio/Path;JILjava/lang/Object;)Lio/github/darkryh/yukitoki/manager/DownloadedFile;
+	public fun equals (Ljava/lang/Object;)Z
+	public final fun getPath ()Lokio/Path;
+	public final fun getSizeBytes ()J
+	public fun hashCode ()I
+	public fun toString ()Ljava/lang/String;
 }
 
 public final class io/github/darkryh/yukitoki/manager/OverwritePolicy : java/lang/Enum {

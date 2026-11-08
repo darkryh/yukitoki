@@ -11,7 +11,7 @@ Current development version: `1.0.0-SNAPSHOT`.
 The last published preview is:
 
 ```kotlin
-implementation("io.github.darkryh.yukitoki:download-manager:1.0.0-beta05")
+implementation("io.github.darkryh.yukitoki:download-manager:1.0.0-beta06")
 ```
 
 The pre-1.0 API documented below is currently available from this repository. The artifact bundles an appropriate Ktor engine for Android, JVM, and iOS.
@@ -25,7 +25,7 @@ val task = manager.enqueue("https://example.com/report.pdf")
 task.state.collect { snapshot -> println(snapshot?.state) }
 
 when (val result = task.await()) {
-    is DownloadResult.Success -> println("Saved to ${result.success.finalPath}")
+    is DownloadResult.Success -> println("Saved to ${result.file.path}")
     is DownloadResult.Failure -> println("Failed: ${result.failure}")
     DownloadResult.Cancelled -> println("Cancelled")
 }

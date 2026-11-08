@@ -8,24 +8,26 @@ Yukitoki has two independent integrity checks. You can use either or both.
 
 ## Check the size
 
-Pass `expectedSizeBytes` and the download fails with
-[`DownloadFailure.IntegrityMismatch`](../reference/api.md#downloadfailure) if the finished file isn't
+Set `expectedBytes` and the download fails with
+[`DownloadFailure.SizeMismatch`](../reference/api.md#tasks-and-results) if the finished file isn't
 exactly that many bytes.
 
 ```kotlin
 manager.enqueue(
-    url = "https://example.com/app-1.2.3.apk",
-    expectedSizeBytes = 5_242_880, // 5 MiB, exactly
+    DownloadRequest(
+        url = "https://example.com/app-1.2.3.apk",
+        expectedBytes = 5_242_880, // 5 MiB, exactly
+    )
 )
 ```
 
 The manager also cross-checks the server's `Content-Length` while streaming, so a truncated response
-is caught even without `expectedSizeBytes`.
+is caught even without `expectedBytes`.
 
 ## Check the content hash
 
-Pass an `expectedChecksum` and the manager hashes the downloaded bytes and compares. A mismatch fails
-with [`DownloadFailure.ChecksumMismatch`](../reference/api.md#downloadfailure), and the bad file is
+Set `expectedChecksum` and the manager hashes the downloaded bytes and compares. A mismatch fails
+with [`DownloadFailure.ChecksumMismatch`](../reference/api.md#tasks-and-results), and the bad file is
 never moved into place.
 
 ```kotlin
@@ -33,11 +35,13 @@ import io.github.darkryh.yukitoki.manager.ChecksumSpec
 import io.github.darkryh.yukitoki.manager.ChecksumAlgorithm
 
 manager.enqueue(
-    url = "https://example.com/app-1.2.3.apk",
-    expectedChecksum = ChecksumSpec(
-        algorithm = ChecksumAlgorithm.SHA_256,
-        expectedHex = "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
-    ),
+    DownloadRequest(
+        url = "https://example.com/app-1.2.3.apk",
+        expectedChecksum = ChecksumSpec(
+            algorithm = ChecksumAlgorithm.SHA_256,
+            expectedHex = "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
+        ),
+    )
 )
 ```
 
@@ -55,9 +59,11 @@ catches corruption anywhere in the file.
 
 ```kotlin
 manager.enqueue(
-    url = "https://example.com/app-1.2.3.apk",
-    expectedSizeBytes = 5_242_880,
-    expectedChecksum = ChecksumSpec(ChecksumAlgorithm.SHA_256, publishedSha256),
+    DownloadRequest(
+        url = "https://example.com/app-1.2.3.apk",
+        expectedBytes = 5_242_880,
+        expectedChecksum = ChecksumSpec(ChecksumAlgorithm.SHA_256, publishedSha256),
+    )
 )
 ```
 
@@ -73,8 +79,8 @@ manager.observe(id).collect { snapshot ->
     when (failure) {
         is DownloadFailure.ChecksumMismatch ->
             showError("File is corrupt. Expected ${failure.expectedHex}, got ${failure.actualHex}.")
-        is DownloadFailure.IntegrityMismatch ->
-            showError("Wrong size: expected ${failure.expectedSize}, got ${failure.actualSize}.")
+        is DownloadFailure.SizeMismatch ->
+            showError("Wrong size: expected ${failure.expectedBytes}, got ${failure.actualBytes}.")
         else -> showError("Download failed: $failure")
     }
 }
@@ -83,4 +89,4 @@ manager.observe(id).collect { snapshot ->
 ## Related
 
 - [Handle failures and retries](handle-failures-and-retries.md) — the full failure taxonomy.
-- [API reference: ChecksumSpec](../reference/api.md#checksumspec)
+- [API reference: DownloadRequest](../reference/api.md#downloadrequest)

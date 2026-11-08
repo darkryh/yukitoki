@@ -14,7 +14,7 @@ class DownloadIntentsWasmTest {
         val result = DownloadIntents.dispatch(
             DownloadIntentRequest(
                 url = "data:text/plain,hello",
-                suggestedFileName = "hello.txt",
+                fileName = "hello.txt",
             )
         )
 
@@ -37,7 +37,7 @@ class DownloadIntentsWasmTest {
         val result = DownloadIntents.dispatch(
             DownloadIntentRequest(
                 url = "data:text/plain,hello",
-                suggestedFileName = "hello.txt",
+                fileName = "hello.txt",
                 headers = Headers.Empty,
             )
         )
@@ -56,7 +56,7 @@ class DownloadIntentsWasmTest {
         val result = DownloadIntents.dispatch(
             DownloadIntentRequest(
                 url = "https://yukitoki-test-unreachable.invalid/report.pdf",
-                suggestedFileName = "report.pdf",
+                fileName = "report.pdf",
                 headers = headersOf("Authorization", "Bearer test-token"),
             )
         )

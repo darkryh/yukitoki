@@ -96,19 +96,6 @@ class DownloadManagerExternalSmokeTest {
             sizeBytes = 20_971_520,
         ),
         PublicResource(
-            name = "tele2-1mb",
-            provider = "Tele2",
-            url = "http://speedtest.tele2.net/1MB.zip",
-            sizeBytes = 1_048_576,
-            fullDownload = true,
-        ),
-        PublicResource(
-            name = "tele2-10mb",
-            provider = "Tele2",
-            url = "http://speedtest.tele2.net/10MB.zip",
-            sizeBytes = 10_485_760,
-        ),
-        PublicResource(
             name = "cachefly-10mb",
             provider = "CacheFly",
             url = "http://cachefly.cachefly.net/10mb.test",
@@ -171,7 +158,7 @@ class DownloadManagerExternalSmokeTest {
             httpClient = client,
             scope = scope,
             fileSystem = fs,
-            config = DownloadManagerConfig(concurrency = DownloadConcurrency.Fixed(2)),
+            config = DownloadManagerConfig(maxConcurrentDownloads = 2),
         )
         try {
             publicResources.filter { it.fullDownload }.forEach { resource ->
@@ -187,7 +174,7 @@ class DownloadManagerExternalSmokeTest {
                     assertIs<DownloadResult.Success>(result, resource.name)
                     assertTrue(fs.exists(destination), "${resource.name} should write a file")
                     resource.sizeBytes?.let { expected ->
-                        assertEquals(expected, result.success.bytesDownloaded, "${resource.name} byte count mismatch")
+                        assertEquals(expected, result.file.sizeBytes, "${resource.name} byte count mismatch")
                     }
                 }
             }

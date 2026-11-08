@@ -6,7 +6,7 @@ Browsers do not expose the user's Downloads directory as an ordinary `Path`. Use
 val result = DownloadIntents.dispatch(
     DownloadIntentRequest(
         url = "https://example.com/report.pdf",
-        suggestedFileName = "report.pdf",
+        fileName = "report.pdf",
     )
 )
 
@@ -28,7 +28,7 @@ mechanism when non-empty:
 val result = DownloadIntents.dispatch(
     DownloadIntentRequest(
         url = "https://example.com/exports/report.pdf",
-        suggestedFileName = "report.pdf",
+        fileName = "report.pdf",
         headers = headersOf("Authorization", "Bearer $token"),
     )
 )

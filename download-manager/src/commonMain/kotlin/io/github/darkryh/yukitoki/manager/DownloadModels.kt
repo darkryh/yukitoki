@@ -1,7 +1,9 @@
 package io.github.darkryh.yukitoki.manager
 
 import io.ktor.http.Headers
+import io.ktor.http.HttpHeaders
 import io.ktor.http.Url
+import kotlinx.coroutines.CompletableDeferred
 import okio.Path
 import kotlin.jvm.JvmInline
 import kotlin.random.Random
@@ -12,8 +14,8 @@ import kotlin.time.Duration.Companion.seconds
 
 @JvmInline
 public value class DownloadId(public val value: String) {
-    public companion object {
-        public fun new(): DownloadId {
+    internal companion object {
+        fun new(): DownloadId {
             val now = Clock.System.now().toEpochMilliseconds()
             val random = Random.nextLong().toULong().toString(16)
             return DownloadId("dl-$now-$random")
@@ -27,7 +29,7 @@ public data class DownloadRequest(
     public val headers: Headers = Headers.Empty,
     public val overwritePolicy: OverwritePolicy = OverwritePolicy.DEFAULT,
     public val retryPolicy: RetryPolicy = RetryPolicy.Default,
-    public val expectedSizeBytes: Long? = null,
+    public val expectedBytes: Long? = null,
     public val progressGranularity: ProgressGranularity = ProgressGranularity(),
     public val priority: DownloadPriority = DownloadPriority.NORMAL,
     public val segmentation: DownloadSegmentation = DownloadSegmentation.Auto,
@@ -37,7 +39,8 @@ public data class DownloadRequest(
         require(url.isNotBlank()) { "url must not be blank" }
         validateDownloadUrl(url)
         (destination as? DownloadDestination.Directory)?.fileName?.let(::validateDownloadFileName)
-        require(expectedSizeBytes == null || expectedSizeBytes >= 0L) { "expectedSizeBytes must be >= 0" }
+        require(expectedBytes == null || expectedBytes >= 0L) { "expectedBytes must be >= 0" }
+        require(HttpHeaders.Range !in headers) { "Range is managed by the download manager and cannot be set by callers" }
     }
 }
 
@@ -71,9 +74,9 @@ public sealed interface DownloadSegmentation {
     public data object Single : DownloadSegmentation
 
     /** Cap per-file range workers. The manager may still fall back to single-stream. */
-    public data class MaxSegments(val segments: Int) : DownloadSegmentation {
+    public data class MaxSegments(val count: Int) : DownloadSegmentation {
         init {
-            require(segments >= 1) { "segments must be >= 1" }
+            require(count >= 1) { "count must be >= 1" }
         }
     }
 }
@@ -155,8 +158,13 @@ public data class RetryPolicy(
     }
 }
 
+/**
+ * Limits how often progress is reported. An update needs [minBytesDelta] new bytes and
+ * [minInterval] since the previous one, so both are minimums. The first and final bytes are always
+ * reported. The defaults update several times a second at any speed.
+ */
 public data class ProgressGranularity(
-    public val minBytesDelta: Long = 64 * 1024,
+    public val minBytesDelta: Long = 0,
     public val minInterval: Duration = 150.milliseconds,
 ) {
     init {
@@ -166,7 +174,8 @@ public data class ProgressGranularity(
 }
 
 public data class DownloadManagerConfig(
-    public val concurrency: DownloadConcurrency = DownloadConcurrency.Default,
+    /** Files downloaded at once. Change it at runtime with [DownloadManager.setMaxConcurrentDownloads]. */
+    public val maxConcurrentDownloads: Int = 3,
     public val bufferSizeBytes: Int = 64 * 1024,
     public val deletePartialOnFailure: Boolean = true,
     public val deletePartialOnCancel: Boolean = true,
@@ -181,18 +190,10 @@ public data class DownloadManagerConfig(
     public val maxRetainedFinished: Int = 100,
 ) {
     init {
+        require(maxConcurrentDownloads >= 1) { "maxConcurrentDownloads must be >= 1" }
         require(bufferSizeBytes >= 4 * 1024) { "bufferSizeBytes must be >= 4KB" }
         require(!idleTimeout.isNegative()) { "idleTimeout must be >= 0 (zero disables)" }
         require(maxRetainedFinished >= 0) { "maxRetainedFinished must be >= 0" }
-    }
-}
-
-public sealed interface DownloadConcurrency {
-    public data object Default : DownloadConcurrency
-    public data class Fixed(val downloads: Int) : DownloadConcurrency {
-        init {
-            require(downloads >= 1) { "downloads must be >= 1" }
-        }
     }
 }
 
@@ -214,14 +215,14 @@ public sealed interface DownloadState {
     public data object Paused : DownloadState
     public data object Cancelling : DownloadState
     public data object Cancelled : DownloadState
-    public data class Succeeded(val result: DownloadSuccess) : DownloadState
+    public data class Succeeded(val file: DownloadedFile) : DownloadState
     public data class Failed(val failure: DownloadFailure) : DownloadState
 }
 
-public data class DownloadSuccess(
-    public val finalPath: Path,
-    public val bytesDownloaded: Long,
-    public val totalBytes: Long?,
+/** The finished, verified file at its final location. */
+public data class DownloadedFile(
+    public val path: Path,
+    public val sizeBytes: Long,
 )
 
 public sealed interface DownloadFailure {
@@ -232,15 +233,14 @@ public sealed interface DownloadFailure {
     ) : DownloadFailure
     public data class Network(val message: String) : DownloadFailure
     public data class Timeout(val message: String) : DownloadFailure
-    public data class PermissionDenied(val path: Path? = null, val message: String? = null) : DownloadFailure
-    public data class NoSpace(val path: Path? = null, val message: String? = null) : DownloadFailure
-    public data class AlreadyExists(val path: Path? = null, val message: String? = null) : DownloadFailure
+    public data class PermissionDenied(val path: Path, val message: String) : DownloadFailure
+    public data class NoSpace(val path: Path, val message: String) : DownloadFailure
+    public data class AlreadyExists(val path: Path) : DownloadFailure
     public data class FileSystem(val message: String) : DownloadFailure
-    public data class IntegrityMismatch(val expectedSize: Long, val actualSize: Long) : DownloadFailure
+    public data class SizeMismatch(val expectedBytes: Long, val actualBytes: Long) : DownloadFailure
     public data class ChecksumMismatch(val expectedHex: String, val actualHex: String) : DownloadFailure
     public data class ServerChanged(val message: String) : DownloadFailure
-    public data class Unsupported(val message: String) : DownloadFailure
-    public data class ManagerClosed(val message: String = "Download manager is closed") : DownloadFailure
+    public data object ManagerClosed : DownloadFailure
     public data class Unexpected(val message: String) : DownloadFailure
 }
 
@@ -255,7 +255,7 @@ public data class DownloadSnapshot(
 )
 
 public sealed interface DownloadResult {
-    public data class Success(val success: DownloadSuccess) : DownloadResult
+    public data class Success(val file: DownloadedFile) : DownloadResult
     public data object Cancelled : DownloadResult
     public data class Failure(val failure: DownloadFailure) : DownloadResult
 }
@@ -268,29 +268,48 @@ public data class DownloadManagerState(
 )
 
 internal sealed interface DownloadCommand {
-    public data class Enqueue(val request: DownloadRequest, val id: DownloadId = DownloadId.new()) : DownloadCommand
-    public data class Pause(val id: DownloadId) : DownloadCommand
-    public data class Resume(val id: DownloadId) : DownloadCommand
-    public data class Cancel(val id: DownloadId) : DownloadCommand
-    public data object PauseAll : DownloadCommand
-    public data object ResumeAll : DownloadCommand
-    public data object CancelAll : DownloadCommand
-    public data class Retry(val id: DownloadId) : DownloadCommand
-    public data object RetryAllFailed : DownloadCommand
-    public data class MoveWithinPriority(val id: DownloadId, val newPosition: Int) : DownloadCommand
-    public data class Remove(val id: DownloadId, val deleteFile: Boolean) : DownloadCommand
-    public data object ClearFinished : DownloadCommand
-    public data class SetConcurrency(val concurrency: DownloadConcurrency) : DownloadCommand
+    data class Enqueue(
+        val request: DownloadRequest,
+        val id: DownloadId = DownloadId.new(),
+        /** Completed with the terminal result; registered atomically with the enqueue. */
+        val outcome: CompletableDeferred<DownloadResult?>? = null,
+    ) : DownloadCommand
+    data class Pause(val id: DownloadId) : DownloadCommand
+    data class Resume(val id: DownloadId) : DownloadCommand
+    data class Cancel(val id: DownloadId) : DownloadCommand
+    data object PauseAll : DownloadCommand
+    data object ResumeAll : DownloadCommand
+    data object CancelAll : DownloadCommand
+    data class Retry(val id: DownloadId) : DownloadCommand
+    data object RetryAllFailed : DownloadCommand
+    data class MoveWithinPriority(val id: DownloadId, val newPosition: Int) : DownloadCommand
+    data class Remove(val id: DownloadId, val deleteFile: Boolean) : DownloadCommand
+    data object ClearFinished : DownloadCommand
+    data class SetMaxConcurrentDownloads(val max: Int) : DownloadCommand
 }
 
 public sealed interface CommandResult {
-    public data class Accepted(val id: DownloadId? = null) : CommandResult
-    public data class Rejected(
-        val reason: String,
-        val failure: DownloadFailure? = null,
-    ) : CommandResult
+    public data object Accepted : CommandResult
+
+    public sealed interface Rejected : CommandResult {
+        /** No download has this id, or it was already removed. */
+        public data object NotFound : Rejected
+
+        /** The command is not valid while the download is in [state]. */
+        public data class InvalidState(val state: DownloadState) : Rejected
+
+        /** [position] is outside the download's priority queue. */
+        public data class InvalidPosition(val position: Int) : Rejected
+
+        /** The manager is shutting down or already closed. */
+        public data object ManagerClosed : Rejected
+
+        /** The command was valid, but carrying it out failed with [failure]. */
+        public data class Failed(val failure: DownloadFailure) : Rejected
+    }
 }
 
+/** Thrown by [DownloadManager.enqueue] when the download cannot be accepted. */
 public class DownloadRejectedException(
     public val failure: DownloadFailure,
 ) : IllegalStateException(failure.toString())
@@ -311,7 +330,7 @@ private fun validateDownloadUrl(url: String) {
     }
 }
 
-private fun validateDownloadFileName(fileName: String) {
+internal fun validateDownloadFileName(fileName: String) {
     val trimmed = fileName.trim()
     require(trimmed.isNotEmpty()) { "fileName must not be blank" }
     require(trimmed != "." && trimmed != "..") { "fileName must be a file name, not a directory reference" }

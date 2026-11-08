@@ -28,7 +28,8 @@ public interface DownloadManager : AutoCloseable {
     public fun observe(downloadId: DownloadId): Flow<DownloadSnapshot?>
     public suspend fun await(downloadId: DownloadId): DownloadResult?
 
-    public suspend fun enqueue(request: DownloadRequest, id: DownloadId = DownloadId.new()): DownloadTask
+    /** Queues [request]. Throws [DownloadRejectedException] when it cannot be accepted. */
+    public suspend fun enqueue(request: DownloadRequest): DownloadTask
 
     public suspend fun enqueue(
         url: String,
@@ -38,12 +39,8 @@ public interface DownloadManager : AutoCloseable {
         DownloadRequest(url = url, destination = destination, priority = priority)
     )
 
+    /** Queues [request] and suspends until it finishes. Rejections are returned as failures. */
     public suspend fun download(request: DownloadRequest): DownloadResult
-
-    public suspend fun download(
-        url: String,
-        destination: DownloadDestination = DownloadDestination.Default,
-    ): DownloadResult = download(DownloadRequest(url = url, destination = destination))
 
     public suspend fun pause(downloadId: DownloadId): CommandResult
     public suspend fun resume(downloadId: DownloadId): CommandResult
@@ -54,7 +51,9 @@ public interface DownloadManager : AutoCloseable {
     public suspend fun resumeAll(): CommandResult
     public suspend fun cancelAll(): CommandResult
     public suspend fun retryAllFailed(): CommandResult
-    public suspend fun setConcurrency(concurrency: DownloadConcurrency): CommandResult
+
+    /** Changes how many files download at once. Throws [IllegalArgumentException] below 1. */
+    public suspend fun setMaxConcurrentDownloads(max: Int): CommandResult
 
     /** Remove one terminal entry from manager state, optionally deleting its completed file. */
     public suspend fun remove(downloadId: DownloadId, deleteFile: Boolean = false): CommandResult
@@ -143,7 +142,7 @@ private class OwnedDownloadManager(
         }
     }
 
-    public override fun close() {
+    override fun close() {
         try {
             delegate.close()
         } finally {

@@ -18,6 +18,6 @@ public object DownloadLocations {
 
 @Suppress("EXPECT_ACTUAL_CLASSIFIERS_ARE_IN_BETA_WARNING")
 internal expect object PlatformDownloadPathProvider {
-    public val isSupported: Boolean
+    val isSupported: Boolean
     fun defaultDownloadDirectory(): Path
 }

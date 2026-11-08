@@ -4,7 +4,7 @@ Runtime transfer failures are typed:
 
 ```kotlin
 when (val result = task.await()) {
-    is DownloadResult.Success -> use(result.success.finalPath)
+    is DownloadResult.Success -> use(result.file.path)
     DownloadResult.Cancelled -> Unit
     is DownloadResult.Failure -> show(result.failure)
 }

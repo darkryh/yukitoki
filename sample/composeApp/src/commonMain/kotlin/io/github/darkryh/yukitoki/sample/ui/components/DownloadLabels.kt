@@ -55,14 +55,13 @@ fun failureLabel(failure: DownloadFailure): String = when (failure) {
     is DownloadFailure.HttpStatus -> failure.message?.let { "HTTP ${failure.code}: $it" } ?: "HTTP ${failure.code}"
     is DownloadFailure.Network -> "network error: ${failure.message}"
     is DownloadFailure.Timeout -> "timeout: ${failure.message}"
-    is DownloadFailure.PermissionDenied -> failure.message?.let { "permission denied: $it" } ?: "permission denied"
-    is DownloadFailure.NoSpace -> failure.message?.let { "no space: $it" } ?: "no space"
-    is DownloadFailure.AlreadyExists -> failure.message?.let { "already exists: $it" } ?: "already exists"
+    is DownloadFailure.PermissionDenied -> "permission denied: ${failure.message}"
+    is DownloadFailure.NoSpace -> "no space: ${failure.message}"
+    is DownloadFailure.AlreadyExists -> "already exists: ${failure.path}"
     is DownloadFailure.FileSystem -> "file system error: ${failure.message}"
-    is DownloadFailure.IntegrityMismatch -> "size mismatch: expected ${formatBytes(failure.expectedSize)}, got ${formatBytes(failure.actualSize)}"
+    is DownloadFailure.SizeMismatch -> "size mismatch: expected ${formatBytes(failure.expectedBytes)}, got ${formatBytes(failure.actualBytes)}"
     is DownloadFailure.ChecksumMismatch -> "checksum mismatch"
     is DownloadFailure.ServerChanged -> "server file changed: ${failure.message}"
-    is DownloadFailure.Unsupported -> "unsupported: ${failure.message}"
-    is DownloadFailure.ManagerClosed -> failure.message
+    DownloadFailure.ManagerClosed -> "download manager is closed"
     is DownloadFailure.Unexpected -> failure.message
 }
