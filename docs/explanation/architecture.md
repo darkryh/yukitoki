@@ -163,7 +163,7 @@ job is to execute a download well once you've decided to start it.
 
 ## Where this is a beta
 
-`1.0.0-beta05` is a feature-complete beta. The architecture above is stable and unlikely to change,
+`1.0.0-beta06` is a feature-complete beta. The architecture above is stable and unlikely to change,
 but as a pre-`1.0.0` release the exact shape of some public types may still be refined in response to
 feedback before the stable release. Pin the version you build against and consult the
 [changelog](../../CHANGELOG.md) when upgrading.

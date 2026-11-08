@@ -7,6 +7,78 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0-beta06] - 2026-11-08
+
+A deliberately breaking release: the library has no external users yet, so the API changes with no
+compatibility layer. Maven coordinates are unchanged.
+
+### Changed (breaking)
+
+- `DefaultDownloadManager` is internal. Create a manager with `DownloadManager.create`.
+- `DownloadConcurrency` is replaced by an `Int`: `DownloadManagerConfig.maxConcurrentDownloads` and
+  `setMaxConcurrentDownloads(n)`, which throws below 1.
+- Removed the `enqueue` `id` parameter, `download(url, destination)`, and `DownloadId.new()`.
+- `DownloadSuccess` becomes `DownloadedFile(path, sizeBytes)`, exposed as `DownloadResult.Success.file`
+  and `DownloadState.Succeeded.file`.
+- `CommandResult.Accepted` is an object. `Rejected` is typed: `NotFound`, `InvalidState(state)`,
+  `InvalidPosition(position)`, `ManagerClosed`, `Failed(failure)`.
+- `DownloadFailure.IntegrityMismatch` becomes `SizeMismatch(expectedBytes, actualBytes)`.
+  `ManagerClosed` is an object. `path` is required on `PermissionDenied`, `NoSpace`, and `AlreadyExists`.
+- `DownloadFailure.Unsupported` is removed: a `Range` header or unsupported scheme now throws
+  `IllegalArgumentException` when building the `DownloadRequest`.
+- Renamed `expectedSizeBytes` to `expectedBytes`, `MaxSegments.segments` to `count`, and
+  `DownloadIntentRequest.suggestedFileName` to `fileName`. Intent file names now follow the same rules
+  as managed downloads.
+- `ProgressGranularity` values are both minimums, and `minBytesDelta` defaults to 0. Updates are
+  time-based by default, so a slow download keeps updating.
+
+### Fixed
+
+- Cancelling a paused download reported `Paused`, and `await()` never returned.
+- A pause or cancel issued before the worker first ran was overwritten or lost.
+- `shutdown` hung when a worker was cancelled before it started. Concurrent `shutdown` calls and
+  commands pending at `close()` also hung.
+- `cancelAll` skipped paused downloads and downloads in retry backoff, so those retried after being
+  cancelled. `pauseAll` skipped backoff too, and `resumeAll` ignored downloads still pausing.
+- Queued progress could move `Pausing` or `Cancelling` back to `Running`, and a failure racing a pause
+  or cancel overrode it.
+- `download()` could report `ManagerClosed` for a finished download when finished entries are not
+  retained.
+- A fatal `Error` left the worker in `active` forever.
+- Command replies could arrive before their state on multi-threaded dispatchers. An accepted command is
+  now always visible in `state` when its result returns.
+- Cancelling a paused download, or shutting down with one, left its `.part` file on disk.
+- Filesystem work ran on the caller's thread when a UI scope was passed to `create(httpClient, scope)`.
+  The coordinator now runs on the IO dispatcher, and iOS uses `Dispatchers.IO` for blocking file work.
+- Reported speed was a lifetime average; it now covers about the last 500 ms. Segmented downloads now
+  report speed and ETA.
+- `bufferSizeBytes` had no effect, because each read returned at most 8 KiB.
+- A small file no longer lowers the segment count for later large files, and parallelism lost to a
+  `429` now recovers, one request per finished download.
+- Whole-file requests now wait out an active rate-limit penalty.
+
+### Performance
+
+Measured against the previous engine on loopback with a 512 MiB file, two alternating passes on a busy
+machine. CPU and allocation were consistent. Throughput varied too much to quote, including for a bare
+read loop used as a control, so these are not speed claims.
+
+- Segments write in place at their offsets in one file, instead of separate files merged at the end,
+  which copied every byte twice and doubled temporary disk use. CPU per GiB with four segments fell
+  from 2.8-3.4 s to 1.1-1.3 s on CIO, 5.0-5.3 s to 2.3 s on Java, and 4.7-5.9 s to 1.2-1.5 s on OkHttp.
+- Single-stream CPU per GiB fell from about 1.1 s to 0.7 s on CIO, 3.7-3.9 s to 2.9-3.0 s on Java, and
+  1.8-2.0 s to 1.1-1.4 s on OkHttp. Allocation for a CIO download fell by more than half.
+- `state` is published once per batch of up to 256 messages. With 10,000 downloads and 40,000 events
+  this took 2.0-2.3 s instead of 26-27 s, and allocated 1.1 GiB instead of 68 GiB on the coordinator.
+- `Auto` uses one stream over HTTP/2, where segments share one connection. An explicit `MaxSegments` is
+  still honored.
+- No probe when `expectedBytes` already shows a file is small, and no range probe after a `404` or `410`.
+
+### Removed
+
+- `Auto`'s 6-segment tier, which the per-origin limit of four requests made unreachable. `Auto` now
+  uses one stream below 16 MiB, two below 128 MiB, and four above.
+
 ## [1.0.0-beta05] - 2026-11-07
 
 ### Fixed
@@ -135,7 +207,8 @@ First public beta of the Yukitoki Kotlin Multiplatform download manager.
   the browser owns the actual transfer.
 - **Sample app** — a shared Compose Multiplatform UI running on Android, iOS, and desktop.
 
-[Unreleased]: https://github.com/darkryh/yukitoki/compare/v1.0.0-beta05...HEAD
+[Unreleased]: https://github.com/darkryh/yukitoki/compare/v1.0.0-beta06...HEAD
+[1.0.0-beta06]: https://github.com/darkryh/yukitoki/compare/v1.0.0-beta05...v1.0.0-beta06
 [1.0.0-beta05]: https://github.com/darkryh/yukitoki/compare/v1.0.0-beta04...v1.0.0-beta05
 [1.0.0-beta04]: https://github.com/darkryh/yukitoki/compare/v1.0.0-beta03...v1.0.0-beta04
 [1.0.0-beta03]: https://github.com/darkryh/yukitoki/compare/v1.0.0-beta02...v1.0.0-beta03
