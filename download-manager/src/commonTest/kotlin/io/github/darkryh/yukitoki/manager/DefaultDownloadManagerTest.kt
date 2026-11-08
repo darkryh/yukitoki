@@ -1384,7 +1384,7 @@ class DefaultDownloadManagerTest {
     }
 
     @Test
-    fun `cancel releases existing awaiters`() = runTest {
+    fun `close releases existing awaiters as cancelled`() = runTest {
         val engine = MockEngine {
             awaitCancellation()
         }
@@ -1399,7 +1399,7 @@ class DefaultDownloadManagerTest {
         runCurrent()
         manager.close()
 
-        assertNull(withTimeout(1_000) { waiter.await() })
+        assertEquals(DownloadResult.Cancelled, withTimeout(1_000) { waiter.await() })
         client.close()
     }
 

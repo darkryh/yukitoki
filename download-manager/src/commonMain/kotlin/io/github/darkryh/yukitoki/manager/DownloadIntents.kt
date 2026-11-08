@@ -1,6 +1,7 @@
 package io.github.darkryh.yukitoki.manager
 
 import io.ktor.http.Headers
+import io.ktor.http.decodeURLPart
 
 /**
  * A browser-owned download request. Completion and the final filesystem path are not observable.
@@ -54,14 +55,19 @@ internal expect object PlatformDownloadIntentDispatcher {
 
 internal fun intentFileNameFor(request: DownloadIntentRequest): String =
     request.fileName?.takeIf { it.isNotBlank() }?.sanitizeDownloadFileName()
-        ?: request.url.substringBefore('?')
-            .substringBefore('#')
-            .substringAfterLast('/', "")
-            .takeIf { it.isNotBlank() }
-            ?.sanitizeDownloadFileName()
+        ?: fileNameFromUrl(request.url)
         ?: "download.bin"
 
-private fun String.sanitizeDownloadFileName(): String =
+/** The safe file name a URL's last path segment suggests, or null when it suggests none. */
+internal fun fileNameFromUrl(url: String): String? {
+    val path = url.substringBefore('?').substringBefore('#').substringAfter("://", "")
+    if ('/' !in path) return null
+    val segment = path.substringAfterLast('/')
+    val decoded = runCatching { segment.decodeURLPart() }.getOrDefault(segment)
+    return decoded.substringAfterLast('/').substringAfterLast('\\').sanitizeDownloadFileName()
+}
+
+private fun String.sanitizeDownloadFileName(): String? =
     filter { it.isLetterOrDigit() || it == '.' || it == '-' || it == '_' || it == ' ' }
         .trim()
-        .ifBlank { "download.bin" }
+        .takeUnless { name -> name.all { it == '.' } }

@@ -13,6 +13,8 @@ import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.selects.select
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import io.ktor.client.network.sockets.ConnectTimeoutException
+import io.ktor.client.network.sockets.SocketTimeoutException
 import okio.*
 import okio.Path.Companion.toPath
 import kotlin.concurrent.Volatile
@@ -69,7 +71,12 @@ internal class DefaultDownloadManager(
         data class Progress(val id: DownloadId, val progress: DownloadProgress) : InternalEvent
         data class MetadataLearned(val id: DownloadId, val meta: ServerMetadata) : InternalEvent
         data class Succeeded(val id: DownloadId, val file: DownloadedFile) : InternalEvent
-        data class Failed(val id: DownloadId, val failure: DownloadFailure) : InternalEvent
+        /** [transient]: worth retrying even though [failure] alone would not say so. */
+        data class Failed(
+            val id: DownloadId,
+            val failure: DownloadFailure,
+            val transient: Boolean = false,
+        ) : InternalEvent
         data class Paused(val id: DownloadId) : InternalEvent
         data class Cancelled(val id: DownloadId) : InternalEvent
     }
@@ -129,7 +136,14 @@ internal class DefaultDownloadManager(
     init {
         // Reserving destinations and removing files touch the disk, so the coordinator must stay
         // off a borrowed UI scope's dispatcher. One thread at a time keeps its state confined.
-        internalScope.launch(ioDispatcher.limitedParallelism(1)) { coordinatorLoop() }
+        internalScope.launch(ioDispatcher.limitedParallelism(1)) {
+            try {
+                coordinatorLoop()
+            } finally {
+                // Every way out comes through here: shutdown, close(), or a cancelled scope.
+                withContext(NonCancellable) { settleAfterTeardown() }
+            }
+        }
     }
 
     internal suspend fun submitCommand(command: DownloadCommand): CommandResult {
@@ -153,10 +167,16 @@ internal class DefaultDownloadManager(
         _state.map { it.snapshots[downloadId] }.distinctUntilChanged()
 
     override suspend fun await(downloadId: DownloadId): DownloadResult? {
-        if (closed) return null
-        val reply = CompletableDeferred<DownloadResult?>()
-        if (!inbox.trySend(InternalMessage.AwaitTerminal(downloadId, reply)).isSuccess) return null
-        return awaitUnlessClosed(reply)
+        if (!closed) {
+            val reply = CompletableDeferred<DownloadResult?>()
+            if (inbox.trySend(InternalMessage.AwaitTerminal(downloadId, reply)).isSuccess) {
+                awaitUnlessClosed(reply)?.let { return it }
+                if (!closed && rootJob.isActive) return null
+            }
+        }
+        // Teardown settles every download in state before rootJob completes.
+        rootJob.join()
+        return terminalResultFromSnapshot(_state.value.snapshots[downloadId])
     }
 
     override suspend fun enqueue(request: DownloadRequest): DownloadTask {
@@ -269,10 +289,7 @@ internal class DefaultDownloadManager(
                 }
             }
             publishAndReply()
-            if (draining && active.isEmpty()) {
-                finishShutdown()
-                return
-            }
+            if (draining && active.isEmpty()) return
         }
     }
 
@@ -341,13 +358,31 @@ internal class DefaultDownloadManager(
         }
     }
 
-    private fun finishShutdown() {
-        // Release everyone still waiting on a download that will never terminate now.
-        val pending = terminalWaiters.values.flatten()
+    /**
+     * Leaves nothing behind: each download ends in a terminal state, published, with no partial
+     * left unless the config keeps it. rootJob can't complete until this returns, so anyone who
+     * joins it sees the final state.
+     */
+    private suspend fun settleAfterTeardown() {
+        draining = true
+        active.values.toList().joinAll()
+        // The workers have reported by now. A file that was saved must count as saved.
+        while (true) {
+            handleMessage(inbox.tryReceive().getOrNull() ?: break)
+        }
+        active.clear()
+        resumeAfterPause.clear()
+        pendingByPriority.values.forEach { it.clear() }
+        unfinishedIds().forEach { id ->
+            val snapshot = snapshots[id] ?: return@forEach
+            deletePartialAfterCancel(id, snapshot)
+            finishCancelled(id, snapshot)
+        }
+        terminalWaiters.values.flatten().forEach { replyAfterPublish(it, null) }
         terminalWaiters.clear()
-        pending.forEach { if (!it.isCompleted) it.complete(null) }
-        shutdownReply?.complete(Unit)
+        shutdownReply?.let { replyAfterPublish(it, Unit) }
         shutdownReply = null
+        publishAndReply()
     }
 
     private fun handleUserCommand(message: InternalMessage.UserCommand) {
@@ -568,6 +603,7 @@ internal class DefaultDownloadManager(
                 when (snap.state) {
                     is DownloadState.Cancelling -> {
                         resumeAfterPause.remove(event.id)
+                        deletePartialAfterCancel(event.id, snap)
                         finishCancelled(event.id, snap)
                         return
                     }
@@ -579,11 +615,13 @@ internal class DefaultDownloadManager(
                 }
                 val canRetry = !draining &&
                     snap.attempts < snap.request.retryPolicy.maxAttempts &&
-                    shouldRetry(event.failure, snap.request.retryPolicy)
+                    (event.transient || shouldRetry(event.failure, snap.request.retryPolicy))
                 if (canRetry) {
                     snapshots[event.id] = snap.copy(state = DownloadState.Queued)
                     scheduleRetry(event.id, snap.attempts, snap.request.retryPolicy, event.failure)
                 } else {
+                    // Only now: a retry resumes from what this attempt already wrote.
+                    deletePartialAfterFailure(event.id, snap)
                     serverMetadata.remove(event.id)
                     snapshots[event.id] = snap.copy(state = DownloadState.Failed(event.failure), queuePosition = null)
                     completeWaiters(event.id, DownloadResult.Failure(event.failure))
@@ -613,11 +651,13 @@ internal class DefaultDownloadManager(
     }
 
     private fun settlePaused(id: DownloadId, snap: DownloadSnapshot) {
+        // A pause interrupted this attempt, so it doesn't count against the retry budget.
+        val attempts = (snap.attempts - 1).coerceAtLeast(0)
         if (resumeAfterPause.remove(id)) {
-            snapshots[id] = snap.copy(state = DownloadState.Queued)
+            snapshots[id] = snap.copy(state = DownloadState.Queued, attempts = attempts)
             enqueueIdByPriority(id, snap.request.priority)
         } else {
-            snapshots[id] = snap.copy(state = DownloadState.Paused, queuePosition = null)
+            snapshots[id] = snap.copy(state = DownloadState.Paused, attempts = attempts, queuePosition = null)
         }
     }
 
@@ -631,6 +671,13 @@ internal class DefaultDownloadManager(
     private fun deletePartialAfterCancel(id: DownloadId, snap: DownloadSnapshot) {
         val destination = snap.resolvedDestination ?: return
         if (config.deletePartialOnCancel) {
+            runCatching { fileSystem.delete(partialPathFor(destination, id), mustExist = false) }
+        }
+    }
+
+    private fun deletePartialAfterFailure(id: DownloadId, snap: DownloadSnapshot) {
+        val destination = snap.resolvedDestination ?: return
+        if (config.deletePartialOnFailure) {
             runCatching { fileSystem.delete(partialPathFor(destination, id), mustExist = false) }
         }
     }
@@ -686,7 +733,7 @@ internal class DefaultDownloadManager(
 
         try {
             currentCoroutineContext().ensureActive()
-            ensureParentDirectory(finalPath)
+            localFile { ensureParentDirectory(finalPath) }
             val inlineValidated = writeDownloadToPath(
                 id = id,
                 request = request,
@@ -694,13 +741,13 @@ internal class DefaultDownloadManager(
                 knownMetadata = knownMetadata,
             )
             request.expectedChecksum?.let { checksum ->
-                if (!inlineValidated) validateChecksum(partialPath, checksum)
+                if (!inlineValidated) localFile { validateChecksum(partialPath, checksum) }
             }
-            val size = fileSystem.metadata(partialPath).size ?: 0L
+            val size = localFile { fileSystem.metadata(partialPath).size ?: 0L }
             request.expectedBytes?.let {
                 if (it != size) throw SizeMismatchException(it, size)
             }
-            finalizePartialFile(partialPath, finalPath, request.effectiveOverwritePolicy(), id)
+            localFile { finalizePartialFile(partialPath, finalPath, request.effectiveOverwritePolicy(), id) }
             recordOriginSuccess(originKey(request.url))
             sendEvent(
                 InternalEvent.Succeeded(id, DownloadedFile(finalPath, size))
@@ -720,8 +767,8 @@ internal class DefaultDownloadManager(
                     throw t
                 }
                 else -> {
-                    cleanupPartial(listOf(partialPath), onCancel = false)
-                    sendEvent(InternalEvent.Failed(id, mapThrowable(t, finalPath)))
+                    // The coordinator removes the partial once it knows no retry will use it.
+                    sendEvent(InternalEvent.Failed(id, mapThrowable(t, finalPath), transient = t is TruncatedBodyException))
                 }
             }
         }
@@ -735,8 +782,15 @@ internal class DefaultDownloadManager(
         partialPath: Path,
         knownMetadata: ServerMetadata?,
     ): Boolean {
-        val exists = fileSystem.exists(partialPath)
-        val downloadedBytes = if (exists) (fileSystem.metadata(partialPath).size ?: 0L) else 0L
+        var downloadedBytes = localFile {
+            if (fileSystem.exists(partialPath)) fileSystem.metadata(partialPath).size ?: 0L else 0L
+        }
+        // Without a validator nothing can prove the file is unchanged, so appending could splice
+        // two versions together. A restart costs bytes; a corrupt file costs far more.
+        if (downloadedBytes > 0L && knownMetadata?.eTag == null && knownMetadata?.lastModified == null) {
+            localFile { fileSystem.delete(partialPath, mustExist = false) }
+            downloadedBytes = 0L
+        }
         if (request.segmentation !is DownloadSegmentation.Single &&
             downloadedBytes == 0L &&
             writeSegmentedDownloadToPath(id, request, partialPath)
@@ -744,12 +798,28 @@ internal class DefaultDownloadManager(
             return false
         }
 
+        return try {
+            streamToPartial(id, request, partialPath, knownMetadata, downloadedBytes)
+        } catch (_: ResumeRefusedException) {
+            localFile { fileSystem.delete(partialPath, mustExist = false) }
+            streamToPartial(id, request, partialPath, knownMetadata, downloadedBytes = 0L)
+        }
+    }
+
+    private suspend fun streamToPartial(
+        id: DownloadId,
+        request: DownloadRequest,
+        partialPath: Path,
+        knownMetadata: ServerMetadata?,
+        downloadedBytes: Long,
+    ): Boolean {
         awaitOriginPenalty(originKey(request.url))
         val statement = httpClient.prepareRequest(request.url) {
             this.method = HttpMethod.Get
             disableTotalRequestTimeout()
             headers {
                 appendCallerHeaders(request)
+                appendIdentityEncodingIfAbsent(request)
                 if (downloadedBytes > 0L) {
                     append(HttpHeaders.Range, "bytes=$downloadedBytes-")
                     if (knownMetadata != null) {
@@ -778,11 +848,13 @@ internal class DefaultDownloadManager(
                 }
             } else if (response.status == HttpStatusCode.OK) {
                 if (downloadedBytes > 0L) {
-                    fileSystem.delete(partialPath, mustExist = false)
+                    localFile { fileSystem.delete(partialPath, mustExist = false) }
                 }
                 if (responseETag != null || responseLastModified != null) {
                     sendEvent(InternalEvent.MetadataLearned(id, ServerMetadata(responseETag, responseLastModified)))
                 }
+            } else if (response.status == HttpStatusCode.RequestedRangeNotSatisfiable && downloadedBytes > 0L) {
+                throw ResumeRefusedException()
             } else {
                 throw DownloadHttpException(
                     code = response.status.value,
@@ -792,7 +864,10 @@ internal class DefaultDownloadManager(
             }
 
             // 2. Pre-flight Disk Space Validation
-            val totalBytes = response.headers[HttpHeaders.ContentLength]?.toLongOrNull()
+            // An engine that decompressed the body leaves Content-Length at the compressed size.
+            val contentEncoding = response.headers[HttpHeaders.ContentEncoding]?.trim()
+            val decodedByEngine = contentEncoding != null && !contentEncoding.equals("identity", ignoreCase = true)
+            val totalBytes = response.headers[HttpHeaders.ContentLength]?.toLongOrNull()?.takeUnless { decodedByEngine }
             if (totalBytes != null && totalBytes > 0L) requireDiskSpace(partialPath, totalBytes)
 
             // 3. Setup progressive hashing ONLY when downloaded from byte 0
@@ -801,9 +876,9 @@ internal class DefaultDownloadManager(
 
             // Bytes reach the file through positional writes, one per read: a BufferedSink would
             // issue one write per 8 KiB Okio segment. The hasher only ever sees a copy.
-            val fileHandle = fileSystem.openReadWrite(partialPath)
+            val fileHandle = localFile { fileSystem.openReadWrite(partialPath) }
             val hashingSink = try {
-                if (!isAppend) fileHandle.resize(0L)
+                if (!isAppend) localFile { fileHandle.resize(0L) }
                 if (request.expectedChecksum != null && actualStartOffset == 0L) {
                     when (request.expectedChecksum.algorithm) {
                         ChecksumAlgorithm.MD5 -> HashingSink.md5(blackholeSink())
@@ -830,13 +905,16 @@ internal class DefaultDownloadManager(
                     val read = readWithIdleTimeout(channel, buffer, config.idleTimeout)
                     if (read < 0) break
                     if (read == 0) continue
-                    fileHandle.write(fileOffset, buffer, 0, read)
+                    localFile { fileHandle.write(fileOffset, buffer, 0, read) }
                     fileOffset += read
                     hashBuffer?.write(buffer, 0, read)
                     downloaded += read
                     reporter.sample(downloaded)?.let { sendEvent(InternalEvent.Progress(id, it)) }
                 }
 
+                if (totalLength != null && downloaded < totalLength) {
+                    throw TruncatedBodyException(totalLength, downloaded)
+                }
                 if (totalLength != null && downloaded != totalLength) {
                     throw SizeMismatchException(totalLength, downloaded)
                 }
@@ -883,14 +961,14 @@ internal class DefaultDownloadManager(
             // Segments land in their own file, not partialPath: an unfinished one has holes, and a
             // partial file that survives (crash, retained on failure) is resumed from its size.
             val segmentedPath = "$partialPath.seg".toPath()
-            fileSystem.delete(segmentedPath, mustExist = false)
+            localFile { fileSystem.delete(segmentedPath, mustExist = false) }
 
             try {
                 val progressMutex = Mutex()
                 val segmentProgress = LongArray(ranges.size)
                 val reporter = ProgressReporter(request.progressGranularity, metadata.totalBytes)
                 // Never resize() ahead: on the JVM okio allocates the whole delta as one ByteArray.
-                fileSystem.openReadWrite(segmentedPath).use { fileHandle ->
+                localFile { fileSystem.openReadWrite(segmentedPath) }.use { fileHandle ->
                     coroutineScope {
                         ranges.mapIndexed { index, range ->
                             async {
@@ -912,13 +990,21 @@ internal class DefaultDownloadManager(
                     }
                 }
 
-                fileSystem.delete(partialPath, mustExist = false)
-                fileSystem.atomicMove(segmentedPath, partialPath)
-                val actualSize = fileSystem.metadata(partialPath).size ?: 0L
+                val actualSize = localFile {
+                    fileSystem.delete(partialPath, mustExist = false)
+                    fileSystem.atomicMove(segmentedPath, partialPath)
+                    fileSystem.metadata(partialPath).size ?: 0L
+                }
                 if (actualSize != metadata.totalBytes) {
                     throw SizeMismatchException(metadata.totalBytes, actualSize)
                 }
                 return true
+            } catch (_: RangesRefusedException) {
+                // The range support the probe saw doesn't hold, so use the single stream.
+                listOf(segmentedPath, partialPath).forEach { path ->
+                    runCatching { fileSystem.delete(path, mustExist = false) }
+                }
+                return false
             } catch (t: Throwable) {
                 // Segments are not resumable (the next attempt starts over), so a pause cleans
                 // up like a cancel instead of leaving unusable slices on disk.
@@ -1164,12 +1250,23 @@ internal class DefaultDownloadManager(
         val permit = acquireOriginPermit(originKey(request.url))
         try {
             statement.executeWithResponseTimeout(config.idleTimeout) { response ->
+                if (response.status == HttpStatusCode.OK) throw RangesRefusedException()
                 if (response.status != HttpStatusCode.PartialContent) {
                     throw DownloadHttpException(
                         code = response.status.value,
                         message = response.status.description,
                         retryAfter = response.headers.retryAfter(),
                     )
+                }
+                val responseETag = response.headers[HttpHeaders.ETag]?.trim()
+                if (metadata.eTag != null && responseETag != null && metadata.eTag != responseETag) {
+                    throw ServerFileChangedException("Remote file ETag changed mid-download")
+                }
+                val responseLastModified = response.headers[HttpHeaders.LastModified]?.trim()
+                if (metadata.lastModified != null && responseLastModified != null &&
+                    metadata.lastModified != responseLastModified
+                ) {
+                    throw ServerFileChangedException("Remote file Last-Modified changed mid-download")
                 }
                 val contentLength = response.headers[HttpHeaders.ContentLength]?.toLongOrNull()
                 if (contentLength != null && contentLength != range.length) {
@@ -1189,12 +1286,12 @@ internal class DefaultDownloadManager(
                     if (downloaded + read > range.length) {
                         throw SizeMismatchException(range.length, downloaded + read)
                     }
-                    fileHandle.write(range.start + downloaded, buffer, 0, read)
+                    localFile { fileHandle.write(range.start + downloaded, buffer, 0, read) }
                     downloaded += read
                     onSegmentProgress(downloaded)
                 }
                 if (downloaded != range.length) {
-                    throw SizeMismatchException(range.length, downloaded)
+                    throw TruncatedBodyException(range.length, downloaded)
                 }
             }
         } finally {
@@ -1407,7 +1504,8 @@ internal class DefaultDownloadManager(
 
     private fun cleanupPartial(paths: List<Path>, onCancel: Boolean) {
         val shouldDelete = if (onCancel) config.deletePartialOnCancel else config.deletePartialOnFailure
-        if (shouldDelete) paths.forEach { fileSystem.delete(it, mustExist = false) }
+        // Best effort: a failed delete must not stop the worker from reporting how it ended.
+        if (shouldDelete) paths.forEach { path -> runCatching { fileSystem.delete(path, mustExist = false) } }
     }
 
     private fun requireDiskSpace(path: Path, requiredBytes: Long) {
@@ -1447,52 +1545,38 @@ internal class DefaultDownloadManager(
         is HttpRequestTimeoutException -> DownloadFailure.Timeout(throwable.message ?: "Request timeout")
         is DownloadStallException -> DownloadFailure.Timeout(throwable.message ?: "Download stalled")
         is ResponseHeadTimeoutException -> DownloadFailure.Timeout(throwable.message ?: "Response timed out")
+        is ConnectTimeoutException -> DownloadFailure.Timeout(throwable.message ?: "Connection timed out")
+        is SocketTimeoutException -> DownloadFailure.Timeout(throwable.message ?: "Socket timed out")
         is SizeMismatchException -> DownloadFailure.SizeMismatch(throwable.expected, throwable.actual)
         is DownloadFileExistsException -> DownloadFailure.AlreadyExists(throwable.path)
         is DiskNoSpaceException -> DownloadFailure.NoSpace(path, throwable.message ?: "Not enough disk space")
         is ChecksumMismatchException -> DownloadFailure.ChecksumMismatch(throwable.expected, throwable.actual)
         is ServerFileChangedException -> DownloadFailure.ServerChanged(throwable.message ?: "Server file changed mid-download")
-        is IllegalStateException -> DownloadFailure.FileSystem(throwable.message ?: "Invalid download state")
-        is IOException -> {
+        is LocalFileException -> {
             val msg = throwable.message.orEmpty()
             when {
                 msg.contains("permission", ignoreCase = true) -> DownloadFailure.PermissionDenied(path, msg)
                 msg.contains("space", ignoreCase = true) || msg.contains("disk full", ignoreCase = true) -> DownloadFailure.NoSpace(path, msg)
-                msg.looksLikeNetworkIoFailure() -> DownloadFailure.Network(msg.ifBlank { "Network IO error" })
                 else -> DownloadFailure.FileSystem(msg.ifBlank { "File system IO error at $path" })
             }
         }
-        else -> DownloadFailure.Unexpected(throwable.message ?: throwable::class.simpleName ?: "Unexpected error")
-    }
-
-    private fun String.looksLikeNetworkIoFailure(): Boolean {
-        val networkTerms = listOf(
-            "connect",
-            "connection",
-            "socket",
-            "stream",
-            "host",
-            "dns",
-            "tls",
-            "ssl",
-            "reset",
-            "refused",
-            "route",
-            "protocol",
-            "unexpected end",
+        // Everything that touches the disk goes through localFile, so these came from the network.
+        // Ktor's engines throw kotlinx.io's IOException, a different class from Okio's on native.
+        is IOException, is kotlinx.io.IOException -> DownloadFailure.Network(
+            throwable.message?.takeIf { it.isNotBlank() } ?: throwable::class.simpleName ?: "Network IO error"
         )
-        return networkTerms.any { contains(it, ignoreCase = true) }
+        else -> DownloadFailure.Unexpected(throwable.message ?: throwable::class.simpleName ?: "Unexpected error")
     }
 
     private fun destinationPathFor(request: DownloadRequest, id: DownloadId): Path =
         when (val destination = request.destination) {
             DownloadDestination.Default -> joinPath(
                 DownloadLocations.downloads,
-                inferFileNameFromUrl(request.url) ?: "download-${id.value}.bin",
+                fileNameFromUrl(request.url) ?: "download-${id.value}.bin",
             )
             is DownloadDestination.Directory -> joinPath(
                 destination.path,
-                destination.fileName ?: inferFileNameFromUrl(request.url) ?: "download-${id.value}.bin",
+                destination.fileName ?: fileNameFromUrl(request.url) ?: "download-${id.value}.bin",
             )
             is DownloadDestination.File -> destination.path
         }
@@ -1511,13 +1595,6 @@ internal class DefaultDownloadManager(
 
     private fun partialPathFor(finalPath: Path, id: DownloadId): Path =
         "$finalPath.yukitoki-${id.value}.part".toPath()
-
-    private fun inferFileNameFromUrl(url: String): String? {
-        val noQuery = url.substringBefore('?').substringBefore('#')
-        val segment = noQuery.substringAfterLast('/', "")
-        if (segment.isBlank()) return null
-        return segment.filter { it.isLetterOrDigit() || it == '.' || it == '-' || it == '_' }.ifBlank { null }
-    }
 
     private fun enqueueIdByPriority(id: DownloadId, priority: DownloadPriority) {
         pendingByPriority.getValue(priority).addLast(id)
@@ -1691,10 +1768,29 @@ private class DownloadHttpException(
     message: String?,
 ) : RuntimeException(message)
 
-private class SizeMismatchException(
+private open class SizeMismatchException(
     val expected: Long,
     val actual: Long,
 ) : RuntimeException("Size mismatch: expected=$expected actual=$actual")
+
+/** The connection ended before the promised bytes arrived. Another attempt can succeed. */
+private class TruncatedBodyException(expected: Long, actual: Long) : SizeMismatchException(expected, actual)
+
+/** The server has no bytes at the offset a resume asked for, so the partial is no use. */
+private class ResumeRefusedException : RuntimeException("Server refused the resume range")
+
+/** A slice got the whole file: the range support the probe saw doesn't hold. */
+private class RangesRefusedException : RuntimeException("Server ignored a range request")
+
+/** An I/O error from the disk, as opposed to one from the network. */
+private class LocalFileException(cause: IOException) : IOException(cause.message, cause)
+
+private inline fun <T> localFile(block: () -> T): T =
+    try {
+        block()
+    } catch (e: IOException) {
+        throw LocalFileException(e)
+    }
 
 private class DownloadFileExistsException(
     val path: Path,
