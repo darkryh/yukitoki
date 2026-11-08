@@ -83,8 +83,8 @@ file.
 This follows the standard HTTP model (`Range` / `Accept-Ranges` / `Content-Range` / `If-Range`), so it
 interoperates with any correct HTTP server without special server support.
 
-Resume is designed around the single-stream path. Segmented downloads keep their in-flight slices as
-internal temp files that are cleaned up on pause — which is why the docs recommend
+Resume is designed around the single-stream path. Segmented downloads write every slice at its offset in one
+internal temp file, which is moved to the `.part` path only once complete and is cleaned up on pause — which is why the docs recommend
 `DownloadSegmentation.Single` when reliable pause/resume matters more than raw speed for a
 particular file.
 

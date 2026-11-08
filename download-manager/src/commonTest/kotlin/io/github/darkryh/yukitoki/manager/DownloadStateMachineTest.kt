@@ -17,12 +17,12 @@ import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
+import okio.FileHandle
 import okio.FileSystem
 import okio.ForwardingFileSystem
 import okio.IOException
 import okio.Path
 import okio.Path.Companion.toPath
-import okio.Sink
 import okio.fakefilesystem.FakeFileSystem
 import kotlin.concurrent.atomics.AtomicInt
 import kotlin.concurrent.atomics.ExperimentalAtomicApi
@@ -258,7 +258,7 @@ class DownloadStateMachineTest {
         delegate: FileSystem,
         private val beforeFailing: () -> Unit,
     ) : ForwardingFileSystem(delegate) {
-        override fun sink(file: Path, mustCreate: Boolean): Sink {
+        override fun openReadWrite(file: Path, mustCreate: Boolean, mustExist: Boolean): FileHandle {
             beforeFailing()
             throw IOException("disk failed")
         }

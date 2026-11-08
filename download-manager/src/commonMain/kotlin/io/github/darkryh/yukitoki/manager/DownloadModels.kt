@@ -158,8 +158,13 @@ public data class RetryPolicy(
     }
 }
 
+/**
+ * Limits how often progress is reported. An update needs [minBytesDelta] new bytes and
+ * [minInterval] since the previous one, so both are minimums. The first and final bytes are always
+ * reported. The defaults update several times a second at any speed.
+ */
 public data class ProgressGranularity(
-    public val minBytesDelta: Long = 64 * 1024,
+    public val minBytesDelta: Long = 0,
     public val minInterval: Duration = 150.milliseconds,
 ) {
     init {

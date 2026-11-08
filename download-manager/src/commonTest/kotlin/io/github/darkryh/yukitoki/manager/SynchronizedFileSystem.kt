@@ -1,6 +1,7 @@
 package io.github.darkryh.yukitoki.manager
 
 import okio.Buffer
+import okio.FileHandle
 import okio.FileMetadata
 import okio.FileSystem
 import okio.ForwardingFileSystem
@@ -43,6 +44,9 @@ class SynchronizedFileSystem(delegate: FileSystem) : ForwardingFileSystem(delega
         }
     }
 
+    override fun openReadWrite(file: Path, mustCreate: Boolean, mustExist: Boolean): FileHandle =
+        guarded { LockedFileHandle(super.openReadWrite(file, mustCreate, mustExist)) }
+
     override fun sink(file: Path, mustCreate: Boolean): Sink =
         guarded { LockedSink(super.sink(file, mustCreate)) }
 
@@ -72,6 +76,17 @@ class SynchronizedFileSystem(delegate: FileSystem) : ForwardingFileSystem(delega
         override fun flush() = guarded { delegate.flush() }
         override fun timeout() = delegate.timeout()
         override fun close() = guarded { delegate.close() }
+    }
+
+    private inner class LockedFileHandle(private val delegate: FileHandle) : FileHandle(readWrite = true) {
+        override fun protectedResize(size: Long) = guarded { delegate.resize(size) }
+        override fun protectedSize(): Long = guarded { delegate.size() }
+        override fun protectedRead(fileOffset: Long, array: ByteArray, arrayOffset: Int, byteCount: Int): Int =
+            guarded { delegate.read(fileOffset, array, arrayOffset, byteCount) }
+        override fun protectedWrite(fileOffset: Long, array: ByteArray, arrayOffset: Int, byteCount: Int) =
+            guarded { delegate.write(fileOffset, array, arrayOffset, byteCount) }
+        override fun protectedFlush() = guarded { delegate.flush() }
+        override fun protectedClose() = guarded { delegate.close() }
     }
 
     private inner class LockedSource(private val delegate: Source) : Source {

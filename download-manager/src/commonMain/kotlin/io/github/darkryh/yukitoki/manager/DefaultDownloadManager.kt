@@ -799,30 +799,40 @@ internal class DefaultDownloadManager(
             val isAppend = response.status == HttpStatusCode.PartialContent
             val actualStartOffset = if (isAppend) downloadedBytes else 0L
 
-            val rawSink = if (isAppend) fileSystem.appendingSink(partialPath) else fileSystem.sink(partialPath)
-            val hashingSink = if (request.expectedChecksum != null && actualStartOffset == 0L) {
-                when (request.expectedChecksum.algorithm) {
-                    ChecksumAlgorithm.MD5 -> HashingSink.md5(rawSink)
-                    ChecksumAlgorithm.SHA_256 -> HashingSink.sha256(rawSink)
-                }
-            } else null
-
-            val sink: BufferedSink = (hashingSink ?: rawSink).buffer()
+            // Bytes reach the file through positional writes, one per read: a BufferedSink would
+            // issue one write per 8 KiB Okio segment. The hasher only ever sees a copy.
+            val fileHandle = fileSystem.openReadWrite(partialPath)
+            val hashingSink = try {
+                if (!isAppend) fileHandle.resize(0L)
+                if (request.expectedChecksum != null && actualStartOffset == 0L) {
+                    when (request.expectedChecksum.algorithm) {
+                        ChecksumAlgorithm.MD5 -> HashingSink.md5(blackholeSink())
+                        ChecksumAlgorithm.SHA_256 -> HashingSink.sha256(blackholeSink())
+                    }
+                } else null
+            } catch (t: Throwable) {
+                fileHandle.close()
+                throw t
+            }
+            val hashBuffer: BufferedSink? = hashingSink?.buffer()
 
             var inlineValidated = false
             try {
+                var fileOffset = fileHandle.size()
                 val channel = response.bodyAsChannel()
                 val buffer = ByteArray(config.bufferSizeBytes)
                 var downloaded = actualStartOffset
                 val totalLength = if (isAppend && totalBytes != null) (downloadedBytes + totalBytes) else totalBytes
 
-                val reporter = SingleStreamProgress(request.progressGranularity, totalLength)
+                val reporter = ProgressReporter(request.progressGranularity, totalLength)
 
                 while (!channel.isClosedForRead) {
                     val read = readWithIdleTimeout(channel, buffer, config.idleTimeout)
                     if (read < 0) break
                     if (read == 0) continue
-                    sink.write(buffer, 0, read)
+                    fileHandle.write(fileOffset, buffer, 0, read)
+                    fileOffset += read
+                    hashBuffer?.write(buffer, 0, read)
                     downloaded += read
                     reporter.sample(downloaded)?.let { sendEvent(InternalEvent.Progress(id, it)) }
                 }
@@ -831,7 +841,7 @@ internal class DefaultDownloadManager(
                     throw SizeMismatchException(totalLength, downloaded)
                 }
 
-                sink.flush()
+                hashBuffer?.flush()
 
                 // 4. Validate progressive checksum on-the-fly (if downloaded from scratch)
                 if (hashingSink != null && request.expectedChecksum != null) {
@@ -842,7 +852,8 @@ internal class DefaultDownloadManager(
                     inlineValidated = true
                 }
             } finally {
-                sink.close()
+                hashBuffer?.close()
+                fileHandle.close()
             }
             inlineValidated
         }
@@ -869,57 +880,40 @@ internal class DefaultDownloadManager(
             requireDiskSpace(partialPath, metadata.totalBytes)
 
             val ranges = buildSegmentRanges(metadata.totalBytes, segmentCount)
-            val segmentPaths = ranges.indices.map { index -> "$partialPath.seg$index".toPath() }
-            segmentPaths.forEach { fileSystem.delete(it, mustExist = false) }
+            // Segments land in their own file, not partialPath: an unfinished one has holes, and a
+            // partial file that survives (crash, retained on failure) is resumed from its size.
+            val segmentedPath = "$partialPath.seg".toPath()
+            fileSystem.delete(segmentedPath, mustExist = false)
 
             try {
                 val progressMutex = Mutex()
                 val segmentProgress = LongArray(ranges.size)
-                var lastEmitTime = 0L
-                var lastEmitBytes = 0L
-                coroutineScope {
-                    ranges.mapIndexed { index, range ->
-                        async {
-                            downloadSegment(
-                                request = request,
-                                metadata = metadata,
-                                range = range,
-                                segmentPath = segmentPaths[index],
-                                onSegmentProgress = { bytesInSegment ->
-                                    val progress = progressMutex.withLock {
-                                        segmentProgress[index] = bytesInSegment
-                                        val totalDownloaded = segmentProgress.sum()
-                                        val now = Clock.System.now().toEpochMilliseconds()
-                                        val shouldEmit = lastEmitTime == 0L ||
-                                            totalDownloaded - lastEmitBytes >= request.progressGranularity.minBytesDelta ||
-                                            now - lastEmitTime >= request.progressGranularity.minInterval.inWholeMilliseconds ||
-                                            totalDownloaded == metadata.totalBytes
-                                        if (!shouldEmit) return@withLock null
-                                        lastEmitTime = now
-                                        lastEmitBytes = totalDownloaded
-                                        DownloadProgress(
-                                            bytesDownloaded = totalDownloaded,
-                                            totalBytes = metadata.totalBytes,
-                                            speedBytesPerSecond = null,
-                                            eta = null,
-                                        )
+                val reporter = ProgressReporter(request.progressGranularity, metadata.totalBytes)
+                // Never resize() ahead: on the JVM okio allocates the whole delta as one ByteArray.
+                fileSystem.openReadWrite(segmentedPath).use { fileHandle ->
+                    coroutineScope {
+                        ranges.mapIndexed { index, range ->
+                            async {
+                                downloadSegment(
+                                    request = request,
+                                    metadata = metadata,
+                                    range = range,
+                                    fileHandle = fileHandle,
+                                    onSegmentProgress = { bytesInSegment ->
+                                        val progress = progressMutex.withLock {
+                                            segmentProgress[index] = bytesInSegment
+                                            reporter.sample(segmentProgress.sum())
+                                        }
+                                        progress?.let { sendEvent(InternalEvent.Progress(id, it)) }
                                     }
-                                    progress?.let { sendEvent(InternalEvent.Progress(id, it)) }
-                                }
-                            )
-                        }
-                    }.awaitAll()
+                                )
+                            }
+                        }.awaitAll()
+                    }
                 }
 
                 fileSystem.delete(partialPath, mustExist = false)
-                fileSystem.sink(partialPath).buffer().use { sink ->
-                    segmentPaths.forEach { segmentPath ->
-                        fileSystem.source(segmentPath).use { source ->
-                            sink.writeAll(source)
-                        }
-                    }
-                }
-                segmentPaths.forEach { fileSystem.delete(it, mustExist = false) }
+                fileSystem.atomicMove(segmentedPath, partialPath)
                 val actualSize = fileSystem.metadata(partialPath).size ?: 0L
                 if (actualSize != metadata.totalBytes) {
                     throw SizeMismatchException(metadata.totalBytes, actualSize)
@@ -928,7 +922,7 @@ internal class DefaultDownloadManager(
             } catch (t: Throwable) {
                 // Segments are not resumable (the next attempt starts over), so a pause cleans
                 // up like a cancel instead of leaving unusable slices on disk.
-                cleanupPartial(segmentPaths + partialPath, onCancel = t is CancellationException)
+                cleanupPartial(listOf(segmentedPath, partialPath), onCancel = t is CancellationException)
                 val httpFailure = t.findDownloadHttpException()
                 if (httpFailure?.code == 429 && segmentCount > 1) {
                     val retryDelay = httpFailure.retryAfter
@@ -1153,7 +1147,7 @@ internal class DefaultDownloadManager(
         request: DownloadRequest,
         metadata: SegmentedMetadata,
         range: SegmentRange,
-        segmentPath: Path,
+        fileHandle: FileHandle,
         onSegmentProgress: suspend (Long) -> Unit,
     ) {
         val statement = httpClient.prepareRequest(request.url) {
@@ -1186,21 +1180,21 @@ internal class DefaultDownloadManager(
                 }
 
                 val channel = response.bodyAsChannel()
-                fileSystem.sink(segmentPath).buffer().use { sink ->
-                    val buffer = ByteArray(config.bufferSizeBytes)
-                    var downloaded = 0L
-                    while (!channel.isClosedForRead) {
-                        val read = readWithIdleTimeout(channel, buffer, config.idleTimeout)
-                        if (read < 0) break
-                        if (read == 0) continue
-                        sink.write(buffer, 0, read)
-                        downloaded += read
-                        onSegmentProgress(downloaded)
+                val buffer = ByteArray(config.bufferSizeBytes)
+                var downloaded = 0L
+                while (!channel.isClosedForRead) {
+                    val read = readWithIdleTimeout(channel, buffer, config.idleTimeout)
+                    if (read < 0) break
+                    if (read == 0) continue
+                    if (downloaded + read > range.length) {
+                        throw SizeMismatchException(range.length, downloaded + read)
                     }
-                    sink.flush()
-                    if (downloaded != range.length) {
-                        throw SizeMismatchException(range.length, downloaded)
-                    }
+                    fileHandle.write(range.start + downloaded, buffer, 0, read)
+                    downloaded += read
+                    onSegmentProgress(downloaded)
+                }
+                if (downloaded != range.length) {
+                    throw SizeMismatchException(range.length, downloaded)
                 }
             }
         } finally {
@@ -1249,12 +1243,22 @@ internal class DefaultDownloadManager(
     }
 
     private suspend fun readWithIdleTimeout(channel: ByteReadChannel, buffer: ByteArray, idleTimeout: Duration): Int {
-        return if (idleTimeout > Duration.ZERO) {
+        val first = if (idleTimeout > Duration.ZERO) {
             withTimeoutOrNull(idleTimeout) { channel.readAvailable(buffer, 0, buffer.size) }
                 ?: throw DownloadStallException()
         } else {
             channel.readAvailable(buffer, 0, buffer.size)
         }
+        if (first <= 0) return first
+        // readAvailable returns at most one 8 KiB segment whatever the array size. Take what the
+        // channel already holds so bufferSizeBytes decides the size of a write. This cannot stall.
+        var filled = first
+        while (filled < buffer.size && channel.availableForRead > 0) {
+            val read = channel.readAvailable(buffer, filled, buffer.size - filled)
+            if (read <= 0) break
+            filled += read
+        }
+        return filled
     }
 
     private fun buildSegmentRanges(totalBytes: Long, segmentCount: Int): List<SegmentRange> {
@@ -1629,28 +1633,32 @@ internal class DefaultDownloadManager(
     }
 }
 
-/** Throttles progress to [granularity] and estimates speed over windows of at least 500 ms. */
-private class SingleStreamProgress(
+/**
+ * Applies [granularity] to a growing byte count, always reporting the first and final byte, and
+ * measures speed over the most recent window of at least [SPEED_WINDOW_MILLIS].
+ */
+internal class ProgressReporter(
     private val granularity: ProgressGranularity,
     private val totalBytes: Long?,
+    private val nowMillis: () -> Long = { Clock.System.now().toEpochMilliseconds() },
 ) {
     private var lastEmitTime = 0L
     private var lastEmitBytes = 0L
-    private var lastSampleTime = 0L
-    private var lastSampleBytes = 0L
+    private var windowStartTime = 0L
+    private var windowStartBytes = 0L
 
     fun sample(downloaded: Long): DownloadProgress? {
-        val now = Clock.System.now().toEpochMilliseconds()
-        val sinceLastEmit = now - lastEmitTime
+        val now = nowMillis()
         val shouldEmit = lastEmitTime == 0L ||
-            downloaded - lastEmitBytes >= granularity.minBytesDelta ||
-            sinceLastEmit >= granularity.minInterval.inWholeMilliseconds
+            downloaded == totalBytes ||
+            (downloaded - lastEmitBytes >= granularity.minBytesDelta &&
+                now - lastEmitTime >= granularity.minInterval.inWholeMilliseconds)
         if (!shouldEmit) return null
 
-        val speed = if (lastSampleTime == 0L) {
+        val speed = if (windowStartTime == 0L) {
             null
         } else {
-            ((downloaded - lastSampleBytes) * 1000L / max(1L, now - lastSampleTime)).coerceAtLeast(0L)
+            ((downloaded - windowStartBytes) * 1000L / max(1L, now - windowStartTime)).coerceAtLeast(0L)
         }
         val eta = if (speed != null && speed > 0L && totalBytes != null) {
             ((totalBytes - downloaded).coerceAtLeast(0L) * 1000L / speed).milliseconds
@@ -1659,13 +1667,15 @@ private class SingleStreamProgress(
         }
         lastEmitTime = now
         lastEmitBytes = downloaded
-        if (lastSampleTime == 0L || sinceLastEmit >= 500L) {
-            lastSampleTime = now
-            lastSampleBytes = downloaded
+        if (windowStartTime == 0L || now - windowStartTime >= SPEED_WINDOW_MILLIS) {
+            windowStartTime = now
+            windowStartBytes = downloaded
         }
         return DownloadProgress(downloaded, totalBytes, speed, eta)
     }
 }
+
+private const val SPEED_WINDOW_MILLIS: Long = 500
 
 private const val MAX_PARALLEL_REQUESTS_PER_ORIGIN: Int = 4
 

@@ -850,7 +850,7 @@ class DefaultDownloadManagerTest {
             listOf("bytes=0-3", "bytes=4-6", "bytes=7-9"),
             requestedRanges.distinct().sortedBy { it.substringAfter('=').substringBefore('-').toInt() },
         )
-        assertTrue(!fs.exists("/tmp/segmented.bin.part.seg0".toPath()))
+        assertTrue(!fs.exists("/tmp/segmented.bin.part.seg".toPath()))
         manager.shutdown()
         client.close()
     }
@@ -1089,7 +1089,67 @@ class DefaultDownloadManagerTest {
         assertIs<DownloadResult.Failure>(result)
         assertIs<DownloadFailure.SizeMismatch>(result.failure)
         assertTrue(!fs.exists("/tmp/bad-segment.bin".toPath()))
-        assertTrue(!fs.exists("/tmp/bad-segment.bin.part.seg0".toPath()))
+        assertTrue(!fs.exists("/tmp/bad-segment.bin.part.seg".toPath()))
+        manager.shutdown()
+        client.close()
+    }
+
+    @Test
+    fun `failed segmented download retained on failure never leaves a resumable partial`() = runTest {
+        val engine = MockEngine { request ->
+            when (request.method) {
+                HttpMethod.Head -> respond(
+                    content = "",
+                    status = HttpStatusCode.OK,
+                    headers = headersOf(
+                        HttpHeaders.AcceptRanges to listOf("bytes"),
+                        HttpHeaders.ContentLength to listOf("6"),
+                    ),
+                )
+                HttpMethod.Get -> if (request.headers[HttpHeaders.Range] == "bytes=0-2") {
+                    respond(
+                        content = "abc",
+                        status = HttpStatusCode.PartialContent,
+                        headers = headersOf(
+                            HttpHeaders.ContentLength to listOf("3"),
+                            HttpHeaders.ContentRange to listOf("bytes 0-2/6"),
+                        ),
+                    )
+                } else {
+                    respond("nope", HttpStatusCode.NotFound)
+                }
+                else -> error("Unexpected method ${request.method}")
+            }
+        }
+        val client = HttpClient(engine)
+        val fs = FakeFileSystem()
+        val manager = DefaultDownloadManager(
+            httpClient = client,
+            scope = backgroundScope,
+            fileSystem = SynchronizedFileSystem(fs),
+            config = DownloadManagerConfig(deletePartialOnFailure = false, idleTimeout = Duration.ZERO),
+            ioDispatcher = StandardTestDispatcher(testScheduler),
+            timeSource = testScheduler.timeSource,
+            random = Random(seed = 0),
+        )
+        val id = DownloadId.new()
+
+        manager.submitCommand(
+            DownloadCommand.Enqueue(
+                id = id,
+                request = DownloadRequest(
+                    url = "https://example.com/retained.bin",
+                    destinationPath = "/tmp/retained.bin".toPath(),
+                    segmentation = DownloadSegmentation.MaxSegments(2),
+                    retryPolicy = RetryPolicy.None,
+                ),
+            ),
+        )
+
+        assertIs<DownloadResult.Failure>(manager.await(id))
+        val partials = fs.list("/tmp".toPath()).map { it.name }
+        // Only the segment file survives. Anything named as a partial would be resumed by size.
+        assertTrue(partials.none { it.endsWith(".part") }, "resumable partial left behind: $partials")
         manager.shutdown()
         client.close()
     }

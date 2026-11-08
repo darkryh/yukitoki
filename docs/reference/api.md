@@ -69,15 +69,15 @@ Commands return `CommandResult.Accepted` or a `CommandResult.Rejected`:
 `DownloadManagerConfig`:
 
 - `maxConcurrentDownloads = 3`
-- `bufferSizeBytes = 64 KiB`
+- `bufferSizeBytes = 64 KiB` (the largest single write to disk)
 - `deletePartialOnFailure = true`
 - `deletePartialOnCancel = true`
 - `idleTimeout = 30.seconds` (`Duration.ZERO` disables it)
 - `maxRetainedFinished = 100`
 
-`RetryPolicy` uses `Duration` and supplies `Default` and `None`. `ProgressGranularity` uses a byte delta and `minInterval: Duration`. ETA is exposed as `Duration?`.
+`RetryPolicy` uses `Duration` and supplies `Default` and `None`. `ProgressGranularity` sets two minimums for each update, `minBytesDelta` (default 0) and `minInterval` (default 150 ms). The first and final bytes are always reported. ETA is exposed as `Duration?`.
 
-`DownloadSegmentation` is `Auto`, `Single`, or `MaxSegments(count)`. `MaxSegments` is a ceiling; Yukitoki can reduce it or fall back when a server cannot safely serve ranges.
+`DownloadSegmentation` is `Auto`, `Single`, or `MaxSegments(count)`. `MaxSegments` is a ceiling; Yukitoki can reduce it or fall back when a server cannot safely serve ranges, and each origin allows four parallel requests. `Auto` uses one stream below 16 MiB and over HTTP/2, where segments would share one connection.
 
 ## Browser intents
 
