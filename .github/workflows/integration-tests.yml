@@ -1,0 +1,86 @@
+name: Integration tests
+
+on:
+  pull_request:
+    branches:
+      - master
+  push:
+    branches:
+      - master
+  schedule:
+    - cron: "0 6 * * 1" # Large files and the real CDN, every Monday.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: integration-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  apple-jvm-browsers:
+    name: JVM, iOS, and browsers
+    runs-on: macos-latest
+    timeout-minutes: 90
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up JDK
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v5
+
+      - name: Enable Safari automation
+        run: sudo safaridriver --enable
+
+      - name: Choose an iOS simulator
+        run: echo "IOS_DEVICE=$(xcrun simctl list devices available | grep -m1 'iPhone' | grep -oE '[0-9A-F-]{36}')" >> "$GITHUB_ENV"
+
+      - name: Run on pull requests and pushes
+        if: github.event_name == 'pull_request' || github.event_name == 'push'
+        run: integration-tests/run.sh jvm ios chrome firefox safari
+
+      - name: Run with large files and the real CDN
+        if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+        run: integration-tests/run.sh --large --real-cdn jvm ios chrome firefox safari
+
+  android:
+    name: Android emulator
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up JDK
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v5
+
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Run on an emulator
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          arch: x86_64
+          target: google_apis
+          disk-size: 8192M
+          script: integration-tests/run.sh --large --real-cdn android

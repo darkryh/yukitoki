@@ -37,5 +37,7 @@ dependencyResolutionManagement {
 
 include(":download-manager")
 include(":consumer-smoke")
+include(":integration-tests")
+include(":integration-tests:browser")
 include(":sample:composeApp")
 include(":sample:androidApp")
