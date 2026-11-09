@@ -7,11 +7,15 @@ import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.headersOf
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withContext
 import okio.FileSystem
 import okio.Path.Companion.toPath
 import okio.fakefilesystem.FakeFileSystem
@@ -25,6 +29,15 @@ import kotlin.time.Duration
 /** Pins what each public call promises its caller: results, rejections and invariants. */
 @OptIn(ExperimentalCoroutinesApi::class)
 class DownloadApiContractTest {
+    @Test
+    fun `ids stay unique when created from many threads at once`() = runTest {
+        val ids = withContext(Dispatchers.Default) {
+            List(8) { async { List(50_000) { DownloadId.new() } } }.awaitAll().flatten()
+        }
+
+        assertEquals(ids.size, ids.toSet().size)
+    }
+
     private val payload = "payload".encodeToByteArray()
 
     private fun TestScope.manager(

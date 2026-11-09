@@ -5,6 +5,7 @@ import io.ktor.http.headersOf
 import kotlinx.browser.document
 import kotlinx.coroutines.test.runTest
 import org.w3c.dom.HTMLIFrameElement
+import org.w3c.dom.events.Event
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -65,6 +66,19 @@ class DownloadIntentsWasmTest {
         )
 
         assertIs<DownloadIntentResult.Rejected>(result)
+    }
+
+    @Test
+    fun `dispatching does not click anything in the app`() = runTest {
+        var clicks = 0
+        val listener: (Event) -> Unit = { clicks++ }
+        document.addEventListener("click", listener)
+        try {
+            DownloadIntents.dispatch(DownloadIntentRequest("data:text/plain,hello", "hello.txt"))
+        } finally {
+            document.removeEventListener("click", listener)
+        }
+        assertEquals(0, clicks)
     }
 
     @Test

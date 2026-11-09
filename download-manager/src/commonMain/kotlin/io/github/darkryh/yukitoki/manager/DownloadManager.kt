@@ -79,7 +79,8 @@ public interface DownloadManager : AutoCloseable {
          * first on the classpath. It installs `HttpTimeout` with a bounded connect timeout and
          * no total request timeout, so long transfers are never cut off while bytes are still
          * flowing; stalls are caught by [DownloadManagerConfig.idleTimeout] instead.
-         * [configureClient] runs after these defaults and may override them.
+         * [configureClient] runs after these defaults and may override them. It runs again if the
+         * manager has to replace the client because its connections stopped answering.
          */
         public fun create(
             config: DownloadManagerConfig = DownloadManagerConfig(),
@@ -90,8 +91,13 @@ public interface DownloadManager : AutoCloseable {
             }
             val client = createOwnedHttpClient(configureClient)
             val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
-            val delegate = DefaultDownloadManager(client, scope, config = config)
-            return OwnedDownloadManager(delegate, client, scope)
+            val delegate = DefaultDownloadManager(
+                client,
+                scope,
+                config = config,
+                newClient = { createOwnedHttpClient(configureClient) },
+            )
+            return OwnedDownloadManager(delegate, scope)
         }
 
         /**
@@ -101,6 +107,9 @@ public interface DownloadManager : AutoCloseable {
          * the CIO engine's 15 s default), so transfers of any length complete. The client's
          * connect and socket timeouts still apply. The caller remains responsible for closing
          * [httpClient] and cancelling [scope].
+         *
+         * A borrowed client is never replaced, so if an HTTP/2 connection goes silent, retries can
+         * keep waiting on it until the engine drops it.
          */
         public fun create(
             httpClient: HttpClient,
@@ -128,8 +137,7 @@ internal fun createOwnedHttpClient(configureClient: HttpClientConfig<*>.() -> Un
     }
 
 private class OwnedDownloadManager(
-    private val delegate: DownloadManager,
-    private val client: HttpClient,
+    private val delegate: DefaultDownloadManager,
     private val scope: CoroutineScope,
 ) : DownloadManager by delegate {
     private var resourcesClosed = false
@@ -153,7 +161,7 @@ private class OwnedDownloadManager(
     private fun releaseResources() {
         if (resourcesClosed) return
         resourcesClosed = true
-        client.close()
+        delegate.closeHttpClient()
         scope.cancel()
     }
 }

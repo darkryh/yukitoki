@@ -9,7 +9,7 @@ The browser target exposes download intents because browsers do not expose an or
 The latest release is:
 
 ```kotlin
-implementation("io.github.darkryh.yukitoki:download-manager:1.0.0-beta07")
+implementation("io.github.darkryh.yukitoki:download-manager:1.0.0-beta08")
 ```
 
 The artifact bundles an appropriate Ktor engine for Android, JVM, and iOS.
@@ -78,7 +78,7 @@ Downloads never inherit a total request timeout: every download request opts out
 - iOS device and Intel/Apple Silicon simulators: bundled Darwin engine and sandboxed `Documents/Downloads`.
 - Wasm browser: `DownloadIntents`; managed filesystem downloads are unsupported.
 
-Yukitoki does not currently persist its queue across process death or reboot and does not start an Android foreground/background service. Schedule it through platform background infrastructure when that behavior is required.
+Yukitoki does not persist its queue across process death or reboot, and does not run in the background on its own. [Project status](PROJECT_STATUS.md) explains this decision and what to do instead.
 
 The API is Kotlin-first. The iOS artifact is intended for shared Kotlin/Compose code; a separate Swift-native façade is not part of the 1.0 contract.
 
@@ -88,6 +88,7 @@ The API is Kotlin-first. The iOS artifact is intended for shared Kotlin/Compose 
 - [API reference](docs/reference/api.md)
 - [Architecture](docs/explanation/architecture.md)
 - [How-to guides](docs/README.md)
+- [Project status](PROJECT_STATUS.md)
 - [Sample app](sample/README.md)
 
 ## Validation
@@ -96,6 +97,12 @@ The project uses Kotlin explicit API mode and built-in ABI validation. Run:
 
 ```bash
 ./gradlew :download-manager:allTests :download-manager:build :download-manager:checkKotlinAbi
+```
+
+[`integration-tests`](integration-tests/README.md) runs real downloads over real sockets and in real browsers:
+
+```bash
+integration-tests/run.sh
 ```
 
 ## License

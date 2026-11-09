@@ -71,7 +71,7 @@ Use an exact path with `DownloadDestination.File(path)`. `OverwritePolicy.DEFAUL
 
 ## Custom Ktor client
 
-Yukitoki's bundled engines are not on your compile classpath, so add the engine you name, on the Ktor version Yukitoki uses (`3.6.1` for `1.0.0-beta07`). OkHttp is Android and JVM only, so this code belongs in that platform's source set:
+Yukitoki's bundled engines are not on your compile classpath, so add the engine you name, on the Ktor version Yukitoki uses (`3.6.1` for `1.0.0-beta08`). OkHttp is Android and JVM only, so this code belongs in that platform's source set:
 
 ```kotlin
 androidMain.dependencies {

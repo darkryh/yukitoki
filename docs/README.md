@@ -2,7 +2,7 @@
 
 Documentation for the Yukitoki Kotlin Multiplatform download manager, organized by what you need.
 
-These docs describe `1.0.0-beta07`.
+These docs describe `1.0.0-beta08`.
 
 ## Tutorial — *learning*
 
@@ -35,6 +35,7 @@ Background and design rationale — read when you want to understand *why* Yukit
 it does.
 
 - [Architecture and design](explanation/architecture.md)
+- [Project status](../PROJECT_STATUS.md): what's out of scope, what's verified, and what's left before `1.0.0`
 
 ---
 

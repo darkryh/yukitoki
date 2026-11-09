@@ -5,8 +5,10 @@ import io.ktor.http.HttpHeaders
 import io.ktor.http.Url
 import kotlinx.coroutines.CompletableDeferred
 import okio.Path
+import kotlin.concurrent.atomics.AtomicLong
+import kotlin.concurrent.atomics.ExperimentalAtomicApi
+import kotlin.concurrent.atomics.incrementAndFetch
 import kotlin.jvm.JvmInline
-import kotlin.random.Random
 import kotlin.time.Clock
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.milliseconds
@@ -15,10 +17,14 @@ import kotlin.time.Duration.Companion.seconds
 @JvmInline
 public value class DownloadId(public val value: String) {
     internal companion object {
+        // A counter, because Random isn't safe for concurrent use on Kotlin/Native: threads can get the same value.
+        @OptIn(ExperimentalAtomicApi::class)
+        private val sequence = AtomicLong(0L)
+
+        @OptIn(ExperimentalAtomicApi::class)
         fun new(): DownloadId {
             val now = Clock.System.now().toEpochMilliseconds()
-            val random = Random.nextLong().toULong().toString(16)
-            return DownloadId("dl-$now-$random")
+            return DownloadId("dl-$now-${sequence.incrementAndFetch()}")
         }
     }
 }
