@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0-beta08] - 2026-11-09
+
+### Fixed
+
+- A retry or pause of a segmented download threw away all of its progress, so a large file on a flaky connection could start over at every drop. Each segment now continues from where it stopped, as long as the server gave a validator.
+- Every browser download sent a synthetic click to the app's own click listeners, which could close a menu or trigger a listener that starts another download.
+- On iOS, downloads started at the same moment could get the same ID, so one failed with `Duplicate download id`. IDs now come from a counter, so they're unique on every platform.
+- When an HTTP/2 connection stopped answering, every retry waited on that same connection until attempts ran out. A manager from `DownloadManager.create(config)` now moves to a new connection after an idle timeout. A client you pass in can't be replaced.
+
+### Documentation
+
+- Added `PROJECT_STATUS.md`, recording what's out of scope, what's verified, and what's left before `1.0.0`.
+- Documented that `Auto` can use segments over HTTP/2 on iOS, because Ktor's Darwin engine doesn't report the HTTP version.
+
+### Tests
+
+- Added `integration-tests`: real downloads on JVM, Android, iOS, Chrome, Firefox, and Safari, covering HTTP/2, dropped connections, files over 2 GiB, full disks, real CDNs, and network loss.
+
 ## [1.0.0-beta07] - 2026-11-08
 
 ### Changed
@@ -243,7 +261,8 @@ First public beta of the Yukitoki Kotlin Multiplatform download manager.
   the browser owns the actual transfer.
 - **Sample app** — a shared Compose Multiplatform UI running on Android, iOS, and desktop.
 
-[Unreleased]: https://github.com/darkryh/yukitoki/compare/v1.0.0-beta06...HEAD
+[Unreleased]: https://github.com/darkryh/yukitoki/compare/v1.0.0-beta08...HEAD
+[1.0.0-beta08]: https://github.com/darkryh/yukitoki/compare/v1.0.0-beta07...v1.0.0-beta08
 [1.0.0-beta07]: https://github.com/darkryh/yukitoki/compare/v1.0.0-beta06...v1.0.0-beta07
 [1.0.0-beta06]: https://github.com/darkryh/yukitoki/compare/v1.0.0-beta05...v1.0.0-beta06
 [1.0.0-beta05]: https://github.com/darkryh/yukitoki/compare/v1.0.0-beta04...v1.0.0-beta05
