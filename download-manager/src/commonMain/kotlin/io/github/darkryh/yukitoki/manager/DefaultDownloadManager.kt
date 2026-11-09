@@ -42,7 +42,13 @@ internal class DefaultDownloadManager(
     private val timeSource: TimeSource.WithComparableMarks = TimeSource.Monotonic,
     // Jitter source for adaptive rate-limit back-off; injectable so tests are reproducible.
     private val random: Random = Random.Default,
+    // Builds a replacement when connections stop answering. Null when the caller owns the client.
+    newClient: (() -> HttpClient)? = null,
 ) : DownloadManager {
+    private val clients = ReplaceableHttpClient(httpClient, newClient)
+
+    private class DownloadStatement(val url: String, val configure: HttpRequestBuilder.() -> Unit)
+
     private data class ServerMetadata(
         val eTag: String?,
         val lastModified: String?,
@@ -70,6 +76,7 @@ internal class DefaultDownloadManager(
     private sealed interface InternalEvent {
         data class Progress(val id: DownloadId, val progress: DownloadProgress) : InternalEvent
         data class MetadataLearned(val id: DownloadId, val meta: ServerMetadata) : InternalEvent
+        data class SegmentsStarted(val id: DownloadId, val segments: SegmentProgress) : InternalEvent
         data class Succeeded(val id: DownloadId, val file: DownloadedFile) : InternalEvent
         /** [transient]: worth retrying even though [failure] alone would not say so. */
         data class Failed(
@@ -115,6 +122,7 @@ internal class DefaultDownloadManager(
 
     // Coordinator-confined: only the coordinator coroutine reads/writes this map.
     private val serverMetadata = mutableMapOf<DownloadId, ServerMetadata>()
+    private val segmentProgress = mutableMapOf<DownloadId, SegmentProgress>()
 
     // Graceful-shutdown state (coordinator-confined).
     private var draining = false
@@ -257,6 +265,9 @@ internal class DefaultDownloadManager(
         closed = true
         rootJob.cancel()
     }
+
+    /** For the owner of the client: closes it, including any replacement made since it was created. */
+    fun closeHttpClient() = clients.close()
 
     private inner class ManagedDownloadTask(override val id: DownloadId) : DownloadTask {
         override val state: Flow<DownloadSnapshot?> = observe(id)
@@ -523,6 +534,7 @@ internal class DefaultDownloadManager(
                 deletePartialAfterCancel(id, snap)
                 snapshots[id] = snap.copy(state = DownloadState.Cancelled)
                 serverMetadata.remove(id)
+                segmentProgress.remove(id)
                 completeWaiters(id, DownloadResult.Cancelled)
                 markTerminal(id)
                 CommandResult.Accepted
@@ -587,11 +599,16 @@ internal class DefaultDownloadManager(
             is InternalEvent.MetadataLearned -> {
                 serverMetadata[event.id] = event.meta
             }
+            is InternalEvent.SegmentsStarted -> {
+                segmentProgress[event.id] = event.segments
+            }
             is InternalEvent.Succeeded -> {
                 active.remove(event.id)
                 resumeAfterPause.remove(event.id)
                 serverMetadata.remove(event.id)
                 val snap = snapshots[event.id] ?: return
+                // Segments may have been left behind if a later attempt fell back to one stream.
+                if (segmentProgress.remove(event.id) != null) deleteSegments(event.id, snap)
                 snapshots[event.id] = snap.copy(state = DownloadState.Succeeded(event.file), queuePosition = null)
                 completeWaiters(event.id, DownloadResult.Success(event.file))
                 markTerminal(event.id)
@@ -623,6 +640,7 @@ internal class DefaultDownloadManager(
                     // Only now: a retry resumes from what this attempt already wrote.
                     deletePartialAfterFailure(event.id, snap)
                     serverMetadata.remove(event.id)
+                    segmentProgress.remove(event.id)
                     snapshots[event.id] = snap.copy(state = DownloadState.Failed(event.failure), queuePosition = null)
                     completeWaiters(event.id, DownloadResult.Failure(event.failure))
                     markTerminal(event.id)
@@ -663,6 +681,7 @@ internal class DefaultDownloadManager(
 
     private fun finishCancelled(id: DownloadId, snap: DownloadSnapshot) {
         serverMetadata.remove(id)
+        segmentProgress.remove(id)
         snapshots[id] = snap.copy(state = DownloadState.Cancelled, queuePosition = null)
         completeWaiters(id, DownloadResult.Cancelled)
         markTerminal(id)
@@ -672,6 +691,7 @@ internal class DefaultDownloadManager(
         val destination = snap.resolvedDestination ?: return
         if (config.deletePartialOnCancel) {
             runCatching { fileSystem.delete(partialPathFor(destination, id), mustExist = false) }
+            deleteSegments(id, snap)
         }
     }
 
@@ -679,7 +699,13 @@ internal class DefaultDownloadManager(
         val destination = snap.resolvedDestination ?: return
         if (config.deletePartialOnFailure) {
             runCatching { fileSystem.delete(partialPathFor(destination, id), mustExist = false) }
+            deleteSegments(id, snap)
         }
+    }
+
+    private fun deleteSegments(id: DownloadId, snap: DownloadSnapshot) {
+        val destination = snap.resolvedDestination ?: return
+        runCatching { fileSystem.delete(segmentsPathFor(partialPathFor(destination, id)), mustExist = false) }
     }
 
     private fun handleRetryReady(id: DownloadId) {
@@ -705,6 +731,7 @@ internal class DefaultDownloadManager(
             val snapshot = snapshots[next] ?: continue
             if (snapshot.state !is DownloadState.Queued) continue
             val knownMetadata = serverMetadata[next]
+            val knownSegments = segmentProgress[next]
             // Starting is set here, not by the worker, so a pause or cancel issued before the
             // worker first runs already sees a cancellable job.
             snapshots[next] = snapshot.copy(state = DownloadState.Starting, attempts = snapshot.attempts + 1)
@@ -717,6 +744,7 @@ internal class DefaultDownloadManager(
                     snapshot.resolvedDestination
                         ?: error("Reserved destination missing for ${next.value}"),
                     knownMetadata,
+                    knownSegments,
                 )
             }
             active[next] = workerJob
@@ -728,6 +756,7 @@ internal class DefaultDownloadManager(
         request: DownloadRequest,
         finalPath: Path,
         knownMetadata: ServerMetadata?,
+        knownSegments: SegmentProgress?,
     ) {
         val partialPath = partialPathFor(finalPath, id)
 
@@ -739,6 +768,7 @@ internal class DefaultDownloadManager(
                 request = request,
                 partialPath = partialPath,
                 knownMetadata = knownMetadata,
+                knownSegments = knownSegments,
             )
             request.expectedChecksum?.let { checksum ->
                 if (!inlineValidated) localFile { validateChecksum(partialPath, checksum) }
@@ -758,7 +788,7 @@ internal class DefaultDownloadManager(
                     sendEvent(InternalEvent.Paused(id))
                 }
                 is CancellationException -> {
-                    cleanupPartial(listOf(partialPath), onCancel = true)
+                    cleanupPartial(listOf(partialPath, segmentsPathFor(partialPath)), onCancel = true)
                     sendEvent(InternalEvent.Cancelled(id))
                 }
                 is Error -> {
@@ -781,6 +811,7 @@ internal class DefaultDownloadManager(
         request: DownloadRequest,
         partialPath: Path,
         knownMetadata: ServerMetadata?,
+        knownSegments: SegmentProgress?,
     ): Boolean {
         var downloadedBytes = localFile {
             if (fileSystem.exists(partialPath)) fileSystem.metadata(partialPath).size ?: 0L else 0L
@@ -793,7 +824,7 @@ internal class DefaultDownloadManager(
         }
         if (request.segmentation !is DownloadSegmentation.Single &&
             downloadedBytes == 0L &&
-            writeSegmentedDownloadToPath(id, request, partialPath)
+            writeSegmentedDownloadToPath(id, request, partialPath, knownSegments)
         ) {
             return false
         }
@@ -814,7 +845,7 @@ internal class DefaultDownloadManager(
         downloadedBytes: Long,
     ): Boolean {
         awaitOriginPenalty(originKey(request.url))
-        val statement = httpClient.prepareRequest(request.url) {
+        val statement = DownloadStatement(request.url) {
             this.method = HttpMethod.Get
             disableTotalRequestTimeout()
             headers {
@@ -941,6 +972,7 @@ internal class DefaultDownloadManager(
         id: DownloadId,
         request: DownloadRequest,
         partialPath: Path,
+        knownSegments: SegmentProgress?,
     ): Boolean {
         val knownSmall = request.segmentation is DownloadSegmentation.Auto &&
             request.expectedBytes?.let { autoSegmentCount(it) <= 1 } == true
@@ -955,36 +987,43 @@ internal class DefaultDownloadManager(
             val segmentCount = recommendedSegmentCount(origin, desiredSegments)
             if (segmentCount <= 1) return false
 
-            requireDiskSpace(partialPath, metadata.totalBytes)
-
-            val ranges = buildSegmentRanges(metadata.totalBytes, segmentCount)
             // Segments land in their own file, not partialPath: an unfinished one has holes, and a
             // partial file that survives (crash, retained on failure) is resumed from its size.
-            val segmentedPath = "$partialPath.seg".toPath()
-            localFile { fileSystem.delete(segmentedPath, mustExist = false) }
+            val segmentedPath = segmentsPathFor(partialPath)
+            val resumable = knownSegments?.takeIf {
+                it.canContinue(metadata, segmentCount) && localFile { fileSystem.exists(segmentedPath) }
+            }
+            val segments = resumable ?: SegmentProgress(metadata, buildSegmentRanges(metadata.totalBytes, segmentCount))
+            if (resumable == null) {
+                localFile { fileSystem.delete(segmentedPath, mustExist = false) }
+                sendEvent(InternalEvent.SegmentsStarted(id, segments))
+            }
+            requireDiskSpace(partialPath, metadata.totalBytes - segments.bytes.sum())
 
             try {
                 val progressMutex = Mutex()
-                val segmentProgress = LongArray(ranges.size)
                 val reporter = ProgressReporter(request.progressGranularity, metadata.totalBytes)
                 // Never resize() ahead: on the JVM okio allocates the whole delta as one ByteArray.
                 localFile { fileSystem.openReadWrite(segmentedPath) }.use { fileHandle ->
                     coroutineScope {
-                        ranges.mapIndexed { index, range ->
+                        segments.ranges.mapIndexed { index, range ->
                             async {
-                                downloadSegment(
-                                    request = request,
-                                    metadata = metadata,
-                                    range = range,
-                                    fileHandle = fileHandle,
-                                    onSegmentProgress = { bytesInSegment ->
-                                        val progress = progressMutex.withLock {
-                                            segmentProgress[index] = bytesInSegment
-                                            reporter.sample(segmentProgress.sum())
+                                val alreadyWritten = segments.bytes[index]
+                                if (alreadyWritten < range.length) {
+                                    downloadSegment(
+                                        request = request,
+                                        metadata = metadata,
+                                        range = SegmentRange(range.start + alreadyWritten, range.endInclusive),
+                                        fileHandle = fileHandle,
+                                        onSegmentProgress = { bytesThisAttempt ->
+                                            val progress = progressMutex.withLock {
+                                                segments.bytes[index] = alreadyWritten + bytesThisAttempt
+                                                reporter.sample(segments.bytes.sum())
+                                            }
+                                            progress?.let { sendEvent(InternalEvent.Progress(id, it)) }
                                         }
-                                        progress?.let { sendEvent(InternalEvent.Progress(id, it)) }
-                                    }
-                                )
+                                    )
+                                }
                             }
                         }.awaitAll()
                     }
@@ -996,6 +1035,7 @@ internal class DefaultDownloadManager(
                     fileSystem.metadata(partialPath).size ?: 0L
                 }
                 if (actualSize != metadata.totalBytes) {
+                    localFile { fileSystem.delete(partialPath, mustExist = false) }
                     throw SizeMismatchException(metadata.totalBytes, actualSize)
                 }
                 return true
@@ -1006,9 +1046,8 @@ internal class DefaultDownloadManager(
                 }
                 return false
             } catch (t: Throwable) {
-                // Segments are not resumable (the next attempt starts over), so a pause cleans
-                // up like a cancel instead of leaving unusable slices on disk.
-                cleanupPartial(listOf(segmentedPath, partialPath), onCancel = t is CancellationException)
+                // The segments stay on disk for a retry or resume. The coordinator removes them
+                // once it knows neither will happen.
                 val httpFailure = t.findDownloadHttpException()
                 if (httpFailure?.code == 429 && segmentCount > 1) {
                     val retryDelay = httpFailure.retryAfter
@@ -1111,12 +1150,33 @@ internal class DefaultDownloadManager(
         val length: Long = endInclusive - start + 1L
     }
 
+    /**
+     * What each segment has written, kept across retries and pauses. Only workers write [bytes], one
+     * at a time per download. It lives in memory, so a process restart starts the segments over.
+     */
+    private class SegmentProgress(
+        val metadata: SegmentedMetadata,
+        val ranges: List<SegmentRange>,
+    ) {
+        val bytes = LongArray(ranges.size)
+
+        /** Without a validator, nothing proves the bytes on disk belong to the same file. */
+        fun canContinue(current: SegmentedMetadata, segmentCount: Int): Boolean =
+            (current.eTag != null || current.lastModified != null) &&
+                current.eTag == metadata.eTag &&
+                current.lastModified == metadata.lastModified &&
+                current.totalBytes == metadata.totalBytes &&
+                segmentCount == ranges.size
+    }
+
+    private fun segmentsPathFor(partialPath: Path): Path = "$partialPath.seg".toPath()
+
     private suspend fun fetchSegmentedMetadata(
         id: DownloadId,
         request: DownloadRequest,
         responseTimeout: Duration,
     ): SegmentedMetadata? {
-        val statement = httpClient.prepareRequest(request.url) {
+        val statement = DownloadStatement(request.url) {
             method = HttpMethod.Head
             headers {
                 appendCallerHeaders(request)
@@ -1180,7 +1240,7 @@ internal class DefaultDownloadManager(
         request: DownloadRequest,
         responseTimeout: Duration,
     ): SegmentedMetadata? {
-        val statement = httpClient.prepareRequest(request.url) {
+        val statement = DownloadStatement(request.url) {
             method = HttpMethod.Get
             headers {
                 appendCallerHeaders(request)
@@ -1236,7 +1296,7 @@ internal class DefaultDownloadManager(
         fileHandle: FileHandle,
         onSegmentProgress: suspend (Long) -> Unit,
     ) {
-        val statement = httpClient.prepareRequest(request.url) {
+        val statement = DownloadStatement(request.url) {
             method = HttpMethod.Get
             disableTotalRequestTimeout()
             headers {
@@ -1318,24 +1378,36 @@ internal class DefaultDownloadManager(
      * head does not arrive within [timeout]. Once [block] runs, body liveness belongs to
      * [readWithIdleTimeout]. A non-positive [timeout] disables the guard.
      */
-    private suspend fun <T> HttpStatement.executeWithResponseTimeout(
+    private suspend fun <T> DownloadStatement.executeWithResponseTimeout(
         timeout: Duration,
         block: suspend (HttpResponse) -> T,
     ): T {
-        if (timeout <= Duration.ZERO) return execute { block(it) }
-        return coroutineScope {
-            val watchdog = launch {
-                delay(timeout)
-                throw ResponseHeadTimeoutException(timeout)
-            }
-            try {
-                execute { response ->
-                    watchdog.cancel()
-                    block(response)
+        val generation = clients.acquire()
+        try {
+            val statement = generation.client.prepareRequest(url, configure)
+            if (timeout <= Duration.ZERO) return statement.execute { block(it) }
+            return coroutineScope {
+                val watchdog = launch {
+                    delay(timeout)
+                    throw ResponseHeadTimeoutException(timeout)
                 }
-            } finally {
-                watchdog.cancel()
+                try {
+                    statement.execute { response ->
+                        watchdog.cancel()
+                        block(response)
+                    }
+                } finally {
+                    watchdog.cancel()
+                }
             }
+        } catch (silent: ResponseHeadTimeoutException) {
+            clients.replace(generation)
+            throw silent
+        } catch (silent: DownloadStallException) {
+            clients.replace(generation)
+            throw silent
+        } finally {
+            generation.release()
         }
     }
 

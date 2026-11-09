@@ -424,9 +424,9 @@ class DownloadResilienceTest {
 
     // --- servers that break their promises -----------------------------------------------------
 
-    private fun headHeaders() = headersOf(
+    private fun headHeaders(etag: String = "\"v1\"") = headersOf(
         HttpHeaders.AcceptRanges to listOf("bytes"),
-        HttpHeaders.ETag to listOf("\"v1\""),
+        HttpHeaders.ETag to listOf(etag),
         HttpHeaders.ContentLength to listOf(payload.size.toString()),
     )
 
@@ -445,6 +445,124 @@ class DownloadResilienceTest {
 
         assertContentEquals(payload, fs.read("/file.bin".toPath()) { readByteArray() })
         assertEquals(listOf("file.bin"), fs.list("/".toPath()).map { it.name })
+    }
+
+    private val requestsLock = Mutex()
+
+    /** Sends the first half of the requested range, then drops the connection. */
+    private fun MockRequestHandleScope.droppedSlice(request: HttpRequestData, etag: String = "\"v1\"") = run {
+        val spec = request.headers[HttpHeaders.Range]!!.removePrefix("bytes=").split('-')
+        val start = spec[0].toInt()
+        val end = spec[1].toInt()
+        val length = end - start + 1
+        val channel = ByteChannel(autoFlush = true)
+        managerScope.launch {
+            channel.writeFully(payload, start, start + length / 2)
+            channel.close()
+        }
+        respond(
+            channel,
+            HttpStatusCode.PartialContent,
+            headersOf(
+                HttpHeaders.ETag to listOf(etag),
+                HttpHeaders.ContentRange to listOf("bytes $start-$end/${payload.size}"),
+                HttpHeaders.ContentLength to listOf(length.toString()),
+            ),
+        )
+    }
+
+    /** Serves ranges, and drops the first response that starts at [cutOn] half way through. */
+    private fun segmentManager(requests: MutableList<String>, cutOn: Long) = manager { request ->
+        if (request.method == HttpMethod.Head) return@manager respond(ByteArray(0), HttpStatusCode.OK, headHeaders())
+        val range = request.headers[HttpHeaders.Range]!!
+        val firstAtCut = requestsLock.withLock {
+            requests += range
+            requests.count { it.startsWith("bytes=$cutOn-") } == 1 && range.startsWith("bytes=$cutOn-")
+        }
+        if (firstAtCut) droppedSlice(request) else rangeResponse(request)
+    }
+
+    private fun requestedBytes(requests: List<String>) = requests.sumOf { range ->
+        val (start, end) = range.removePrefix("bytes=").split('-')
+        end.toLong() - start.toLong() + 1
+    }
+
+    @Test
+    fun `a retry of segments only requests what is missing`() = realTime {
+        val requests = mutableListOf<String>()
+        val secondSegment = payload.size / 2L
+        val manager = segmentManager(requests, cutOn = secondSegment)
+        val retries = RetryPolicy(3, 1.milliseconds, 1.milliseconds, 1.0, 0.0)
+        val result = manager.download(request(retry = retries, segmentation = DownloadSegmentation.MaxSegments(2)))
+
+        val file = assertIs<DownloadResult.Success>(result).file
+        assertContentEquals(payload, fs.read(file.path) { readByteArray() })
+        val starts = requests.map { it.removePrefix("bytes=").substringBefore('-').toLong() }
+        assertTrue(starts.any { it > secondSegment }, "the retry must continue the cut segment: $requests")
+        assertTrue(requestedBytes(requests) < 2L * payload.size, "starting over would request it all twice: $requests")
+        assertEquals(listOf("file.bin"), fs.list("/".toPath()).map { it.name })
+        manager.close()
+    }
+
+    @Test
+    fun `segments start over when the file changed between attempts`() = realTime {
+        val requests = mutableListOf<String>()
+        var version = 1
+        val manager = manager { request ->
+            val tag = "\"v$version\""
+            if (request.method == HttpMethod.Head) {
+                return@manager respond(ByteArray(0), HttpStatusCode.OK, headHeaders(tag))
+            }
+            val range = request.headers[HttpHeaders.Range]!!
+            val isFirstCut = requestsLock.withLock {
+                requests += range
+                requests.size == 1
+            }
+            if (isFirstCut) {
+                version = 2
+                droppedSlice(request, tag)
+            } else {
+                rangeResponse(request, tag)
+            }
+        }
+        val retries = RetryPolicy(3, 1.milliseconds, 1.milliseconds, 1.0, 0.0)
+        val result = manager.download(request(retry = retries, segmentation = DownloadSegmentation.MaxSegments(2)))
+        // The sibling of the cut segment can see either version first, so only the file matters.
+        if (result is DownloadResult.Success) {
+            assertContentEquals(payload, fs.read(result.file.path) { readByteArray() })
+            // Segments race, so either can be the cut one. It restarts, and nothing continues mid-segment.
+            assertTrue(requests.count { it == requests.first() } >= 2, "$requests")
+            val segmentStarts = setOf(0L, payload.size / 2L)
+            val starts = requests.map { it.removePrefix("bytes=").substringBefore('-').toLong() }
+            assertTrue(starts.all { it in segmentStarts }, "kept bytes from the old file: $requests")
+        } else {
+            assertIs<DownloadFailure.ServerChanged>(assertIs<DownloadResult.Failure>(result).failure)
+        }
+        manager.close()
+    }
+
+    @Test
+    fun `cancelling after a segment failure removes the kept segments`() = realTime {
+        val manager = segmentManager(mutableListOf(), cutOn = payload.size / 2L)
+        val slowRetry = RetryPolicy(3, 30.seconds, 30.seconds, 1.0, 0.0)
+        val task = manager.enqueue(request(retry = slowRetry, segmentation = DownloadSegmentation.MaxSegments(2)))
+        manager.state.first { it.snapshots[task.id]?.state is DownloadState.Queued && task.id !in it.active && it.snapshots[task.id]?.attempts == 1 }
+        task.cancel()
+        assertEquals(DownloadResult.Cancelled, task.await())
+        assertEquals(emptyList(), fs.list("/".toPath()))
+        manager.close()
+    }
+
+    @Test
+    fun `running out of retries removes the kept segments`() = realTime {
+        val manager = manager { request ->
+            if (request.method == HttpMethod.Head) return@manager respond(ByteArray(0), HttpStatusCode.OK, headHeaders())
+            droppedSlice(request)
+        }
+        val retries = RetryPolicy(2, 1.milliseconds, 1.milliseconds, 1.0, 0.0)
+        assertIs<DownloadResult.Failure>(manager.download(request(retry = retries, segmentation = DownloadSegmentation.MaxSegments(2))))
+        assertEquals(emptyList(), fs.list("/".toPath()))
+        manager.close()
     }
 
     @Test

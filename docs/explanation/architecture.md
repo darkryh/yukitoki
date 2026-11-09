@@ -84,10 +84,10 @@ stitched together.
 This follows the standard HTTP model (`Range` / `Accept-Ranges` / `Content-Range` / `If-Range`), so it
 interoperates with any correct HTTP server without special server support.
 
-Resume is designed around the single-stream path. Segmented downloads write every slice at its offset in one
-internal temp file, which is moved to the `.part` path only once complete and is cleaned up on pause — which is why the docs recommend
-`DownloadSegmentation.Single` when reliable pause/resume matters more than raw speed for a
-particular file.
+Segmented downloads write every slice at its offset in one internal temp file, which is moved to the
+`.part` path only once complete. A retry or a resume continues each slice from where it stopped, under the
+same rule: the file's validator and size must be unchanged, or the slices start over. Slice progress is kept
+in memory, so it lasts as long as the manager does.
 
 ## Segmentation: prove-then-parallelize
 
@@ -137,6 +137,12 @@ client's own timeouts miss: a socket that connects and then goes silent forever.
 if the response head, or the next body bytes, do not arrive within the configured window. It also
 bounds the HEAD and range metadata probes used to plan segmented downloads.
 
+Over HTTP/2, a client sends every request to a host over one connection, so a retry on a silent
+connection would wait in the same place, and engines offer no way to drop just that connection. When
+the idle timeout fires, a manager from `DownloadManager.create(config)` therefore builds a new client
+for later requests. Requests already running on the old client continue, and it closes after the last
+one ends. A client you pass in belongs to you, so it's never replaced.
+
 Total request timeouts work the other way: download requests explicitly opt out of them. A total
 timeout caps how long a whole transfer may take, which is wrong for a file of unknown size on a link
 of unknown speed. Ktor's CIO engine applies a 15-second one by default unless a request sets its own,
@@ -181,7 +187,7 @@ job is to execute a download well once you've decided to start it.
 
 ## Where this is a beta
 
-`1.0.0-beta07` is a feature-complete beta. The architecture above is stable and unlikely to change,
+`1.0.0-beta08` is a feature-complete beta. The architecture above is stable and unlikely to change,
 but as a pre-`1.0.0` release the exact shape of some public types may still be refined in response to
 feedback before the stable release. Pin the version you build against and consult the
 [changelog](../../CHANGELOG.md) when upgrading.

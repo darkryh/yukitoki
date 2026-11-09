@@ -34,4 +34,4 @@ DownloadManager.create(
 )
 ```
 
-`Duration.ZERO` disables the idle timeout. Invalid request values throw during construction. Public `enqueue` throws `DownloadRejectedException` when a task cannot be accepted; one-shot `download` returns the typed failure.
+`Duration.ZERO` disables the idle timeout, and also stops the manager noticing an HTTP/2 connection that has gone silent. When the timeout fires, the next attempt uses a new connection, unless you passed in your own `HttpClient`. Invalid request values throw during construction. Public `enqueue` throws `DownloadRejectedException` when a task cannot be accepted; one-shot `download` returns the typed failure.

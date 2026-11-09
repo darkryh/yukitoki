@@ -121,6 +121,8 @@ internal actual object PlatformDownloadIntentDispatcher {
         anchor.href = href
         anchor.download = fileName
         anchor.setAttribute("style", "display:none")
+        // The app's own click listeners must not see this synthetic click. The download still starts.
+        anchor.addEventListener("click", { event -> event.stopPropagation() })
         document.body?.appendChild(anchor)
         return anchor
     }
